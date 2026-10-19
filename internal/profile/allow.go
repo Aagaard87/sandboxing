@@ -224,6 +224,52 @@ func ReadAllowFile(path string) ([]AllowRule, error) {
 	return rules, nil
 }
 
+// CheckLANLiterals checks allow rules against deny-LAN before a sandbox is
+// created. Under deny-LAN the backends honour exactly one kind of LAN
+// entry, an IP literal in a private range (RFC 1918, RFC 4193) with its
+// ports listed; a private literal without ports, and any loopback or
+// link-local literal, would be silently refused at run time, so they're
+// errors here instead. It returns the accepted private literals as
+// host:ports entries, once each, for the caller to announce. Without
+// deny-LAN it returns nothing.
+func CheckLANLiterals(rules []AllowRule, denyLAN bool) ([]string, error) {
+	if !denyLAN {
+		return nil, nil
+	}
+	var entries []string
+	seen := make(map[string]bool)
+	for _, r := range rules {
+		ip := net.ParseIP(strings.Trim(r.Domain, "[]"))
+		if ip == nil {
+			continue
+		}
+		switch {
+		case ip.IsLoopback():
+			return nil, fmt.Errorf("allow entry %q is a loopback address: it would reach the host itself, and is refused on every backend", r.Domain)
+		case ip.IsLinkLocalUnicast():
+			return nil, fmt.Errorf("allow entry %q is a link-local address: deny-LAN refuses link-local addresses (where cloud metadata services live) even when listed", r.Domain)
+		case !ip.IsPrivate():
+			continue
+		case len(r.Ports) == 0:
+			example := r.Domain
+			if strings.Contains(example, ":") {
+				example = "[" + example + "]"
+			}
+			return nil, fmt.Errorf("allow entry %q is a LAN address: list the port(s) you need (e.g. %s:8080); deny-LAN permits a LAN host only on listed ports", r.Domain, example)
+		}
+		ports := make([]string, len(r.Ports))
+		for i, p := range r.Ports {
+			ports[i] = strconv.Itoa(p)
+		}
+		entry := net.JoinHostPort(r.Domain, strings.Join(ports, ","))
+		if !seen[entry] {
+			seen[entry] = true
+			entries = append(entries, entry)
+		}
+	}
+	return entries, nil
+}
+
 // ResolvePath expands a leading "~" in p to the user's home directory, and
 // joins a relative result onto baseDir — the directory of the file p was
 // written in — so a path in a profile or spec means the same thing

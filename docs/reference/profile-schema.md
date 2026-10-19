@@ -18,7 +18,10 @@ spec:
       - domain: string          # hostname, "*.example.com" wildcard (on Incus
                                  # only the apex domain gets resolved and
                                  # matched — see the security model doc), or
-                                 # IP address; not a URL
+                                 # IP address; not a URL. An IP address in a
+                                 # private range with `ports` set is permitted
+                                 # even under `denyLAN` (link-local and
+                                 # loopback never are)
         ports: [int]            # optional; TCP ports allowed for this domain
                                  # (omitted: any port)
     allowPresets: [string]       # optional; built-in host groups added to the

@@ -117,6 +117,7 @@ type proxyFixture struct {
 //	web.example      -> 203.0.113.20:80 (an HTTP server)
 //	lan.example      -> 10.0.0.5, 203.0.113.10
 //	onlylan.example  -> 192.168.1.20
+//	lanhost.example  -> 10.20.30.40 (a TCP echo server on 8080)
 //	loop.example     -> 127.0.0.1
 //	localhost        -> 127.0.0.1, ::1
 //	down.example     -> 203.0.113.99 (nothing listening)
@@ -135,17 +136,21 @@ func newProxyFixture(t *testing.T, pol *Policy) *proxyFixture {
 			"web.example":     {"203.0.113.20"},
 			"lan.example":     {"10.0.0.5", "203.0.113.10"},
 			"onlylan.example": {"192.168.1.20"},
+			"lanhost.example": {"10.20.30.40"},
 			"loop.example":    {"127.0.0.1"},
 			"localhost":       {"127.0.0.1", "::1"},
 			"down.example":    {"203.0.113.99"},
 		},
 		routes: map[string]string{
-			"203.0.113.10:443": echo,
-			"203.0.113.10:22":  echo,
-			"203.0.113.20:80":  webAddr,
-			"10.0.0.5:443":     echo,
-			"192.168.1.20:443": echo,
-			"127.0.0.1:443":    echo,
+			"203.0.113.10:443":   echo,
+			"203.0.113.10:22":    echo,
+			"203.0.113.20:80":    webAddr,
+			"10.0.0.5:443":       echo,
+			"192.168.1.20:443":   echo,
+			"10.20.30.40:8080":   echo,
+			"10.20.30.40:22":     echo,
+			"169.254.169.254:80": echo,
+			"127.0.0.1:443":      echo,
 		},
 	}
 	policyPath := filepath.Join(t.TempDir(), "egress-policy.json")
@@ -289,6 +294,48 @@ func TestProxy_Connect_IPLiteralRule(t *testing.T) {
 	}
 	if resp, _, _ := f.connect(t, "echo.example:443"); resp.StatusCode != http.StatusForbidden {
 		t.Errorf("a hostname isn't allowed just because it resolves to an allowlisted IP: status = %d, want 403", resp.StatusCode)
+	}
+}
+
+// TestProxy_DenyLAN_ExplicitLANLiteral: under deny-LAN, an allow rule
+// written as a private IP literal with ports opens exactly that host:port.
+// The same host on another port, a name that resolves to it, and a listed
+// link-local address all stay refused.
+func TestProxy_DenyLAN_ExplicitLANLiteral(t *testing.T) {
+	f := newProxyFixture(t, allowPolicy(true,
+		AllowRule{Domain: "10.20.30.40", Ports: []int{8080}},
+		AllowRule{Domain: "lanhost.example", Ports: []int{8080}},
+		AllowRule{Domain: "169.254.169.254", Ports: []int{80}},
+	))
+
+	resp, c, br := f.connect(t, "10.20.30.40:8080")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("listed LAN literal: status = %d, want 200", resp.StatusCode)
+	}
+	fmt.Fprint(c, "ping\n")
+	if line, err := br.ReadString('\n'); err != nil || line != "ping\n" {
+		t.Fatalf("echo through tunnel = %q, %v; want \"ping\\n\"", line, err)
+	}
+
+	cases := []struct {
+		target, wantReason string
+	}{
+		{"10.20.30.40:22", "not in the allowlist"},
+		{"lanhost.example:8080", "10.20.30.40 is a LAN or link-local address, refused because deny-LAN is on"},
+		{"169.254.169.254:80", "169.254.169.254 is a link-local address, refused under deny-LAN even when listed"},
+	}
+	for _, tc := range cases {
+		resp, _, _ := f.connect(t, tc.target)
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("CONNECT %s: status = %d, want 403", tc.target, resp.StatusCode)
+		}
+		if !strings.Contains(string(body), tc.wantReason) {
+			t.Errorf("CONNECT %s: body %q, want it to contain %q", tc.target, body, tc.wantReason)
+		}
+	}
+	if got := f.net.dialedAddrs(); len(got) != 1 || got[0] != "10.20.30.40:8080" {
+		t.Errorf("dialed %v, want only 10.20.30.40:8080", got)
 	}
 }
 

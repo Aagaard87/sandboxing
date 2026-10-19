@@ -289,6 +289,63 @@ func TestNetworkACLCommands_DenyLANDropsPrivateResolvedIPs(t *testing.T) {
 	}
 }
 
+// The one LAN address deny-lan lets through: an allow entry written as a
+// private IP literal, with its ports. A domain resolving to the same
+// address, a literal without ports, and a link-local literal stay dropped.
+func TestNetworkACLCommands_DenyLANKeepsExplicitLANLiteral(t *testing.T) {
+	policy := provider.NetworkPolicy{
+		DenyLAN: true,
+		Allow: []provider.AllowRule{
+			{Domain: "10.20.30.40", Ports: []int{8080}},
+			{Domain: "fd00::7", Ports: []int{443}},
+			{Domain: "lanhost.example", Ports: []int{9000}},
+			{Domain: "192.168.1.9"},
+			{Domain: "169.254.169.254", Ports: []int{80}},
+		},
+	}
+	resolved := map[string][]string{
+		"10.20.30.40":     {"10.20.30.40"},
+		"fd00::7":         {"fd00::7"},
+		"lanhost.example": {"10.20.30.41"},
+		"192.168.1.9":     {"192.168.1.9"},
+		"169.254.169.254": {"169.254.169.254"},
+	}
+	cmds := networkACLCommands("demo", policy, resolved)
+	for _, want := range [][]string{
+		{"action=allow", "destination=10.20.30.40", "protocol=tcp", "destination_port=8080"},
+		{"action=allow", "destination=fd00::7", "protocol=tcp", "destination_port=443"},
+	} {
+		found := false
+		for _, c := range cmds {
+			if strings.HasSuffix(strings.Join(c, " "), strings.Join(want, " ")) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("deny-lan should keep the explicit LAN literal %v, got %v", want, cmds)
+		}
+	}
+	for _, c := range cmds {
+		for _, dropped := range []string{"destination=10.20.30.41", "destination=192.168.1.9", "destination=169.254.169.254"} {
+			if contains(c, dropped) {
+				t.Errorf("deny-lan must not emit %s, got %v", dropped, c)
+			}
+		}
+	}
+	drops := denyLANDrops(policy, resolved)
+	if len(drops) != 3 {
+		t.Fatalf("denyLANDrops = %q, want one line each for lanhost.example, 192.168.1.9 and 169.254.169.254", drops)
+	}
+	for i, want := range []string{"domain resolves to a LAN address", "without ports", "link-local"} {
+		if !strings.Contains(drops[i], want) {
+			t.Errorf("drop line %q, want it to mention %q", drops[i], want)
+		}
+	}
+	if got := denyLANDrops(provider.NetworkPolicy{Allow: policy.Allow}, resolved); got != nil {
+		t.Errorf("without deny-lan nothing is dropped, got %q", got)
+	}
+}
+
 func TestIsPrivateAddr(t *testing.T) {
 	for addr, want := range map[string]bool{
 		"10.1.2.3":       true,

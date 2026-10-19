@@ -37,7 +37,7 @@ Creates an instance without starting it.
 | `--image <ref>` | Image reference (mutually exclusive with `--spec`) |
 | `--spec <file>` | Path to a Spec YAML document (see [Profile Schema](../reference/profile-schema.md)) |
 | `--profile <name>` | Named profile to apply (repeatable) |
-| `--allow <entry>` | Egress allowlist entry: `host[:port,port]`, `*.domain[:ports]`, an IP address (`[v6]:port` with brackets), or an `http(s)://` URL, which allows its host on its port. One entry per flag (repeatable); hosts only, not URL paths — see [Egress allowlist](profiles-and-policies.md#egress-allowlist) |
+| `--allow <entry>` | Egress allowlist entry: `host[:port,port]`, `*.domain[:ports]`, an IP address (`[v6]:port` with brackets), or an `http(s)://` URL, which allows its host on its port. One entry per flag (repeatable); hosts only, not URL paths. An IP address in a private range with ports set is permitted even under `--deny-lan` — see [Egress allowlist](profiles-and-policies.md#egress-allowlist) |
 | `--allow-preset <name>` | Allow a built-in group of hosts: package sources and git hosts (`apt`, `apk`, `pypi`, `npm`, `github`, `gitlab`) or a coding agent's (`claude`, `codex`, `cursor`, `gemini`, `opencode`, `pi`, the same hosts `--agent` allows). Repeatable or comma-separated — see [Allowing package sources and git hosts](profiles-and-policies.md#allowing-package-sources-and-git-hosts) |
 | `--allow-file <path>` | Add the entries of an [allow file](profiles-and-policies.md#allow-files), one `--allow` entry per line (repeatable) |
 | `--deny-lan` / `--allow-lan` | Block (default) or allow LAN egress |

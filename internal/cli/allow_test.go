@@ -192,3 +192,63 @@ func TestCLI_ProfilePresets(t *testing.T) {
 		t.Errorf("unexpected JSON output: %+v", presets)
 	}
 }
+
+const lanNotice = "agentctl: allow entry 10.20.30.40:8080 is a LAN address; it is reachable on that port only, and deny-LAN stays on for the rest of the network.\n"
+
+// An IP-literal LAN entry with a port is the narrow exception to
+// deny-LAN; create says so once, and only when it would.
+func TestCLI_Create_LANLiteralNotice(t *testing.T) {
+	useIsolatedConfig(t)
+	p := &capturingProvider{Provider: fake.New()}
+	out, err := executeWith(t, p, "create", "demo", "--image=ubuntu", "--allow=10.20.30.40:8080", "--allow=10.20.30.40:8080")
+	if err != nil {
+		t.Fatalf("create: %v (%s)", err, out)
+	}
+	if n := strings.Count(out, lanNotice); n != 1 {
+		t.Errorf("output has the LAN notice %d times, want once:\n%s", n, out)
+	}
+	if !p.lastCreateSpec.Overrides.DenyLAN {
+		t.Error("deny-LAN should stay on")
+	}
+
+	for _, args := range [][]string{
+		{"--output=json", "create", "demo2", "--image=ubuntu", "--allow=10.20.30.40:8080"},
+		{"--preview", "create", "demo3", "--image=ubuntu", "--allow=10.20.30.40:8080"},
+		{"create", "demo4", "--image=ubuntu", "--allow=10.20.30.40", "--allow-lan"},
+	} {
+		out, err := executeWith(t, previewingFake{fake.New()}, args...)
+		if err != nil {
+			t.Fatalf("%v: %v (%s)", args, err, out)
+		}
+		if strings.Contains(out, "is a LAN address") {
+			t.Errorf("%v printed a LAN notice, want none:\n%s", args, out)
+		}
+	}
+}
+
+func TestCLI_Create_LANLiteralErrors(t *testing.T) {
+	useIsolatedConfig(t)
+	dir := t.TempDir()
+	allowFile := filepath.Join(dir, "allow.txt")
+	if err := os.WriteFile(allowFile, []byte("10.20.30.40\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--allow=10.20.30.40"}, `allow entry "10.20.30.40" is a LAN address: list the port(s) you need (e.g. 10.20.30.40:8080); deny-LAN permits a LAN host only on listed ports`},
+		{[]string{"--allow-file=" + allowFile}, `allow entry "10.20.30.40" is a LAN address`},
+		{[]string{"--allow=169.254.169.254:80"}, "link-local"},
+		{[]string{"--allow=127.0.0.1:8080"}, "loopback"},
+	} {
+		p := &capturingProvider{Provider: fake.New()}
+		out, err := executeWith(t, p, append([]string{"create", "demo", "--image=ubuntu"}, c.args...)...)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("create %v: error = %v, want it to contain %q (%s)", c.args, err, c.want, out)
+		}
+		if p.lastCreateSpec.Name != "" {
+			t.Errorf("create %v reached the provider, want it refused first", c.args)
+		}
+	}
+}

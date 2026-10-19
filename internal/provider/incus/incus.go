@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -514,6 +515,9 @@ func (p *Provider) SnapshotDelete(ctx context.Context, name, snapshotName string
 // network ACL, replacing any previous one for this instance.
 func (p *Provider) ApplyNetworkPolicy(ctx context.Context, name string, policy provider.NetworkPolicy) error {
 	resolved := resolveAllowRules(policy.Allow)
+	for _, line := range denyLANDrops(policy, resolved) {
+		fmt.Fprintln(os.Stderr, "agentctl: incus: "+line)
+	}
 	// Best-effort cleanup of a previous ACL from an earlier apply; ignore
 	// errors since it may not exist yet.
 	_, _, _ = p.run(ctx, buildACLDeleteArgs(name)...)
