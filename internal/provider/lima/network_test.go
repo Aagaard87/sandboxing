@@ -656,6 +656,54 @@ func TestConfinedStart_ProbeUnverified_Proceeds(t *testing.T) {
 	if !fl.running {
 		t.Error("instance not running")
 	}
+	if st := mustState(t, "demo"); st.EgressVerdict != "unverified" {
+		t.Errorf("recorded EgressVerdict = %q, want unverified", st.EgressVerdict)
+	}
+	inst, err := p.Status(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if inst.Confinement != provider.ConfinementUnverified {
+		t.Errorf("Status Confinement = %q, want %q", inst.Confinement, provider.ConfinementUnverified)
+	}
+}
+
+func TestConfinedStart_ProbeBlocked_StatusVerified(t *testing.T) {
+	fl := newFakeLima()
+	fl.probeOutput = "AGENTCTL_EGRESS=blocked\n"
+	p, _ := newTestProvider(t, fl, true)
+	ctx := context.Background()
+	if err := p.Start(ctx, "demo"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if st := mustState(t, "demo"); st.EgressVerdict != "blocked" {
+		t.Errorf("recorded EgressVerdict = %q, want blocked", st.EgressVerdict)
+	}
+	inst, err := p.Status(ctx, "demo")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if inst.Confinement != provider.ConfinementVerified {
+		t.Errorf("Status Confinement = %q, want %q", inst.Confinement, provider.ConfinementVerified)
+	}
+
+	// A hostagent other than the recorded one (a plain `limactl stop` and
+	// start, a reboot) carries no verdict.
+	fl.hostAgentPID = 9999
+	if inst, err := p.Status(ctx, "demo"); err != nil || inst.Confinement != "" {
+		t.Errorf("Status with a different hostagent: Confinement = %q, err = %v; want empty", inst.Confinement, err)
+	}
+	fl.hostAgentPID = 4242
+
+	if err := p.Stop(ctx, "demo", provider.StopOptions{}); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if st := mustState(t, "demo"); st.EgressVerdict != "" {
+		t.Errorf("EgressVerdict after Stop = %q, want it cleared", st.EgressVerdict)
+	}
+	if inst, err := p.Status(ctx, "demo"); err != nil || inst.Confinement != "" {
+		t.Errorf("Status after Stop: Confinement = %q, err = %v; want empty", inst.Confinement, err)
+	}
 }
 
 func TestConfinedStart_ProbeGarbage_Fails(t *testing.T) {

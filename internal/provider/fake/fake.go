@@ -101,6 +101,7 @@ func (p *Provider) Start(ctx context.Context, name string) error {
 	}
 	inst.Status = provider.StatusRunning
 	inst.IPs = []string{"10.0.0.2"}
+	inst.Confinement = provider.ConfinementVerified
 	return nil
 }
 
@@ -113,6 +114,7 @@ func (p *Provider) Stop(ctx context.Context, name string, opts provider.StopOpti
 	}
 	inst.Status = provider.StatusStopped
 	inst.IPs = nil
+	inst.Confinement = ""
 	return nil
 }
 

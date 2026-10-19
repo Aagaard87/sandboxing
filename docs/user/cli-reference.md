@@ -79,7 +79,9 @@ Standard lifecycle transitions. Both support `--preview`/`--dry-run`, as does
 ### `agentctl list` (alias `ls`) / `agentctl status <name>`
 
 Show instances. `status` shows one instance's detail (IPs, image, profiles,
-created time).
+created time, and — on Lima under macOS, for a running instance agentctl
+started confined — the result of the start-time network confinement check:
+`verified` or `unverified`; also `confinement` under `--output json`).
 
 ## Interactive access
 

@@ -74,6 +74,7 @@ on every start.`,
 			}
 			if inst, err := p.Status(cmd.Context(), name); err == nil {
 				renderMounts(w, inst.Mounts, jsonOutput(cmd))
+				renderConfinement(w, inst.Confinement, jsonOutput(cmd))
 			}
 			return retryPendingAgentInstall(cmd.Context(), w, p, name)
 		},

@@ -455,6 +455,13 @@ sandbox as expected — and agentctl stopped the instance rather than leave
 it running unprotected. Please report it, with your macOS version and
 `limactl --version`.
 
+If instead `start` prints "network confinement not verified", the check
+didn't run: the guest has no curl, no bash with `timeout`, and no python3
+to try the connection with. The instance still started under the
+sandbox-exec profile, so its egress is still limited to the proxy — it just
+isn't proven from inside this guest. Install `curl` in the image to get the
+check back.
+
 ## Lima: an instance created by an older agentctl has no network access
 
 Instances created before Lima network enforcement existed have no recorded

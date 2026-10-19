@@ -206,7 +206,21 @@ type Instance struct {
 	// backend is the only honest source for "what can this sandbox see
 	// right now".
 	Mounts []Mount `json:"mounts,omitempty"`
+	// Confinement is what the start-time network confinement check found
+	// for a running, confined instance: ConfinementVerified or
+	// ConfinementUnverified. Empty for an unconfined or stopped instance,
+	// and on backends that run no such check.
+	Confinement string `json:"confinement,omitempty"`
 }
+
+const (
+	// ConfinementVerified: the guest could not reach the internet except
+	// through its egress proxy.
+	ConfinementVerified = "verified"
+	// ConfinementUnverified: the confinement is in place, but the guest
+	// had nothing to check it from.
+	ConfinementUnverified = "unverified"
+)
 
 type InstanceStatus string
 
