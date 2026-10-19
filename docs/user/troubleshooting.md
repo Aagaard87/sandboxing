@@ -207,6 +207,22 @@ An already-successful install is never repeated: `create --agent=<name>`
 records success once the install script exits `0`, and every subsequent
 `start` is a no-op with respect to the agent.
 
+## `--agent=pi` fails with "No terminal detected; install Node.js 22.19.0 or newer and npm"
+
+That message comes from pi's own installer, on agentctl builds from before
+agentctl started providing Node.js for pi. pi needs Node.js 22.19.0 or newer
+and only offers to install it when it has a terminal, which an agent install
+never has, so on an image without Node it stops there.
+
+Upgrade agentctl: current builds install Node before running pi's installer
+(see [Agent Provisioning](agent-provisioning.md#built-in-registry)), and the
+next `agentctl start <name>` retries the incomplete install. To fix an
+instance without upgrading, put Node into it yourself, for example on a
+glibc guest by unpacking a `node-v22.*-linux-<arch>.tar.xz` from
+`https://nodejs.org/dist/latest-v22.x/` into `/usr/local` (`sudo tar -xJf
+<file> -C /usr/local --strip-components=1`), then `agentctl start <name>`
+to retry.
+
 ## An agent installed successfully but `claude`/`codex`/... is "command not found"
 
 Almost always a `PATH` problem rather than a failed install, and the fix is
