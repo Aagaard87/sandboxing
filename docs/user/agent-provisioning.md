@@ -28,7 +28,9 @@ $ claude --version
    `create` normally leaves the instance stopped, `--agent` implies
    `start` — you get back a running instance, not a stopped one.
 5. Runs the agent's install command as that non-root user, streaming its
-   output to your terminal.
+   output to your terminal. A curl installer is downloaded to a file and
+   run only if the download succeeded, so a blocked download fails the
+   install instead of being recorded as one.
 
 ## Built-in registry
 
