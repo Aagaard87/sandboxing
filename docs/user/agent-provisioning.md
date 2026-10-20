@@ -76,7 +76,9 @@ to sign in and talk to its default model provider:
   version it found if that is older than 22.19.0. Without passwordless
   sudo, the nodejs.org build goes into `~/.local/node` instead, and a line
   putting `~/.local/node/bin` on `PATH` is added to `~/.profile`. Then pi's
-  installer runs unchanged. A failure prints a line starting
+  installer runs unchanged, and agentctl puts pi's `~/.pi/agent/bin` on
+  `PATH` the same way, via `~/.profile`, so `agentctl shell` finds `pi` by
+  name. A failure prints a line starting
   `agentctl: pi:`, and `agentctl start <name>` retries the install.
   pi also wants ripgrep and fd, and downloads them from `github.com` at
   first use if they are missing, which the egress policy refuses; so

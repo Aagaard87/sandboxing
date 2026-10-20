@@ -134,11 +134,14 @@ var toolsBootstrap string
 
 // piInstallScript is pi's documented one-liner, after installing ripgrep
 // and fd where the package source is reachable and making sure Node.js is
-// at least the 22.19.0 pi's installer requires.
+// at least the 22.19.0 pi's installer requires. pi installs into
+// ~/.pi/agent/bin and adds that to no PATH, so once its installer has
+// succeeded, agentctl_agent_on_path puts it there via ~/.profile.
 var piInstallScript = nodeBootstrap + toolsBootstrap +
 	"agentctl_ensure_tools pi\n" +
 	"agentctl_ensure_node pi 22.19.0\n" +
-	"curl -fsSL https://pi.dev/install.sh | sh"
+	"curl -fsSL https://pi.dev/install.sh | sh || exit\n" +
+	"agentctl_agent_on_path pi .pi/agent/bin"
 
 // presetRules returns the allow rules of the built-in preset called name.
 // The registry and the preset table are both static, so a missing preset
