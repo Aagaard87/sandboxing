@@ -3,6 +3,12 @@
 This walks through the full lifecycle of a sandbox on the Incus backend. It
 assumes you've already run through [Installation](installation.md).
 
+Examples use Incus image references (`images:ubuntu/24.04`). On macOS with the
+Lima backend, use a template reference instead (`--image=template://ubuntu-lts`;
+`limactl template ls` lists them) — see
+[Lima setup](../admin/providers/lima-setup.md). The rest of each command is the
+same.
+
 ## Create
 
 ```console

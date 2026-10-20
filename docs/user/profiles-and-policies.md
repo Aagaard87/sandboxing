@@ -5,6 +5,12 @@ and mount policy — author it once, reference it by name from `create
 --profile=<name>`. See [Profile Schema](../reference/profile-schema.md) for
 the full field reference; this page walks through the important parts.
 
+Examples use Incus image references (`images:ubuntu/24.04`,
+`images:fedora/44`). On macOS with the Lima backend, use a template reference
+instead (`--image=template://ubuntu-lts`; `limactl template ls` lists them) —
+see [Lima setup](../admin/providers/lima-setup.md). `--image=…` stands for
+either form.
+
 ## Network policy
 
 ```yaml
@@ -332,7 +338,7 @@ fields (`allow` — including presets and allow files — `ports`, `mounts`)
 accumulate rather than replace:
 
 ```console
-$ agentctl create demo --profile=default --allow-preset=github --port=9000:9000
+$ agentctl create demo --image=… --profile=default --allow-preset=github --port=9000:9000
 ```
 
 This applies the `default` profile's full allowlist plus the `github`

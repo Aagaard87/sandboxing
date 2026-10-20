@@ -71,6 +71,9 @@ func newCreateCmd() *cobra.Command {
 			if resolvedImage == "" {
 				return fmt.Errorf("either --image or --spec is required")
 			}
+			if err := validateImageRef(providerName, resolvedImage); err != nil {
+				return err
+			}
 			if len(profileNames) == 0 {
 				if def := configFromContext(cmd.Context()).DefaultProfile; def != "" {
 					profileNames = []string{def}
