@@ -223,6 +223,26 @@ glibc guest by unpacking a `node-v22.*-linux-<arch>.tar.xz` from
 <file> -C /usr/local --strip-components=1`), then `agentctl start <name>`
 to retry.
 
+## pi says "fd not found. Downloading…" then "proxy response 403 !== 200 when HTTP tunneling"
+
+```text
+fd not found. Downloading…
+Failed to download fd: fetch failed… proxy response 403 !== 200 when HTTP tunneling
+```
+
+and the same for ripgrep. pi uses fd and ripgrep for file search and
+downloads them from `github.com` at first use when they are not on `PATH`;
+the sandbox's egress policy refuses that, so pi runs without them.
+
+`create --agent=pi` installs both from the distribution before pi's
+installer, but only when the instance can reach its package source. If
+the install printed `agentctl: pi: could not install ripgrep and fd`,
+recreate the instance with `--allow-preset apt` (Debian/Ubuntu) or
+`--allow-preset apk` (Alpine). For an existing instance, install them
+yourself where the package source is reachable, for example
+`agentctl exec --root <name> -- apt-get install -y ripgrep fd-find` on
+Debian/Ubuntu; pi also finds Debian's `fdfind` binary under that name.
+
 ## An agent installed successfully but `claude`/`codex`/... is "command not found"
 
 Almost always a `PATH` problem rather than a failed install, and the fix is

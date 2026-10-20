@@ -78,6 +78,13 @@ to sign in and talk to its default model provider:
   putting `~/.local/node/bin` on `PATH` is added to `~/.profile`. Then pi's
   installer runs unchanged. A failure prints a line starting
   `agentctl: pi:`, and `agentctl start <name>` retries the install.
+  pi also wants ripgrep and fd, and downloads them from `github.com` at
+  first use if they are missing, which the egress policy refuses; so
+  before pi's installer agentctl installs them from the distribution
+  (`apt-get`, `apk` or `dnf`) when the instance allows that package source
+  (`--allow-preset apt` on Debian/Ubuntu, `--allow-preset apk` on Alpine),
+  and otherwise prints one `agentctl: pi:` line saying so and carries on,
+  leaving pi without them.
 
 Every host is named outright, never as a wildcard: Lima's egress proxy
 would match a `*.example.com` entry against each hostname, but Incus

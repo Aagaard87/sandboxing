@@ -17,7 +17,7 @@ type Spec struct {
 	Name string
 	// InstallScript is a full shell command line (passed to `sh -c`, not
 	// stdin) — each agent's own documented one-liner, verbatim, except
-	// that pi's is preceded by nodeBootstrap.
+	// that pi's is preceded by nodeBootstrap and toolsBootstrap.
 	InstallScript string
 	// EnvVar is the host API key environment variable this agent expects,
 	// where the project has one obvious default. Unused until a future
@@ -64,7 +64,9 @@ type Spec struct {
 //     it when it has a terminal, which `create --agent` never gives it,
 //     so its one-liner is preceded by nodeBootstrap. gemini could reuse
 //     the same bootstrap (its floor, Node 20, is below the v22 line it
-//     installs); that is a separate change.
+//     installs); that is a separate change. pi also downloads ripgrep and
+//     fd from github.com at first use, which egress refuses, so
+//     toolsBootstrap installs them from the distribution first.
 //   - cursor's runtime traffic is spread across more domains than any
 //     other entry here; its preset covers install plus the primary API
 //     path, and anything beyond that is a --allow extension.
@@ -123,9 +125,18 @@ var Registry = map[string]Spec{
 //go:embed node-bootstrap.sh
 var nodeBootstrap string
 
-// piInstallScript is pi's documented one-liner, after making sure Node.js
-// is at least the 22.19.0 pi's installer requires.
-var piInstallScript = nodeBootstrap +
+// toolsBootstrap defines agentctl_ensure_tools, which installs ripgrep and
+// fd with the guest's package manager when they are missing, and never
+// fails the install.
+//
+//go:embed tools-bootstrap.sh
+var toolsBootstrap string
+
+// piInstallScript is pi's documented one-liner, after installing ripgrep
+// and fd where the package source is reachable and making sure Node.js is
+// at least the 22.19.0 pi's installer requires.
+var piInstallScript = nodeBootstrap + toolsBootstrap +
+	"agentctl_ensure_tools pi\n" +
 	"agentctl_ensure_node pi 22.19.0\n" +
 	"curl -fsSL https://pi.dev/install.sh | sh"
 
