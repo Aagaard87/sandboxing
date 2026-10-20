@@ -180,9 +180,10 @@ all of the guest's traffic, and that's where agentctl enforces policy:
    out from inside the guest; if that succeeds, it stops the instance and
    reports an error rather than leave it running unprotected.
 
-`agentctl start` reports that check after its mounts line: `network confinement
-verified` when the guest's direct connection was refused, or `network
-confinement not verified` when the guest has none of curl, bash with
+`agentctl start` reports that check after its mounts line, as does
+`agentctl create --agent=<name>` (which starts the instance to install the
+agent): `network confinement verified` when the guest's direct connection
+was refused, or `network confinement not verified` when the guest has none of curl, bash with
 `timeout`, or python3 to try one with. Unverified means the sandbox-exec
 profile is still in place — only the in-guest proof is missing; install
 `curl` in the image to get it. `agentctl status <name>` shows the same

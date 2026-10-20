@@ -120,6 +120,53 @@ func TestCLI_Start_JSONAndPreview_PrintNoConfinementLine(t *testing.T) {
 	}
 }
 
+func TestCLI_CreateWithAgent_ReportsConfinement(t *testing.T) {
+	useIsolatedConfig(t)
+	p := fake.New()
+	out, err := execute(t, p, "create", "demo", "--image=ubuntu", "--agent=pi")
+	if err != nil {
+		t.Fatalf("create --agent=pi: %v (%s)", err, out)
+	}
+	const verified = "agentctl: network confinement verified: the guest could not reach the internet except through its egress proxy.\n"
+	if n := strings.Count(out, verified); n != 1 {
+		t.Errorf("create --agent output %q has the verified line %d times, want once", out, n)
+	}
+	if !strings.Contains(out, "agentctl: no host directories are exposed to this sandbox.\n"+verified) {
+		t.Errorf("create --agent output %q: want the confinement line right after the mounts line", out)
+	}
+}
+
+func TestCLI_Create_NoConfinementLineUnlessStarted(t *testing.T) {
+	useIsolatedConfig(t)
+	p := fake.New()
+	out, err := execute(t, p, "create", "demo", "--image=ubuntu")
+	if err != nil {
+		t.Fatalf("create: %v (%s)", err, out)
+	}
+	if strings.Contains(out, "network confinement") {
+		t.Errorf("create output %q has a confinement line, want none without --agent", out)
+	}
+
+	out, err = execute(t, p, "--output=json", "create", "demo2", "--image=ubuntu", "--agent=pi")
+	if err != nil {
+		t.Fatalf("create --output=json --agent=pi: %v (%s)", err, out)
+	}
+	if strings.Contains(out, "network confinement") {
+		t.Errorf("create --output=json output %q has the confinement line, want nothing extra", out)
+	}
+
+	out, err = executeProvider(t, previewingFake{p}, "--preview", "create", "demo3", "--image=ubuntu", "--agent=pi")
+	if err != nil {
+		t.Fatalf("create --preview: %v (%s)", err, out)
+	}
+	if strings.Contains(out, "network confinement") {
+		t.Errorf("create --preview output %q mentions confinement, want only the previewed commands", out)
+	}
+	if _, err := p.Status(context.Background(), "demo3"); err == nil {
+		t.Error("create --preview created the instance")
+	}
+}
+
 func TestCLI_Status_NoConfinementLabelWhenEmpty(t *testing.T) {
 	useIsolatedConfig(t)
 	p := fake.New()

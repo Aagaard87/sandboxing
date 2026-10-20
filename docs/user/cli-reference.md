@@ -68,7 +68,9 @@ different project — mounts are a per-boot property.
 
 Mounts are **sticky**: passing no mount flag reuses whatever was applied last,
 rather than resetting the instance to its profile's defaults. The active set is
-printed on every start. See
+printed on every start. On Lima under macOS, the next line reports the
+start-time network confinement check (`network confinement verified` or `not
+verified`); `create --agent` prints the same line when it starts the instance. See
 [Host filesystem access](profiles-and-policies.md#host-filesystem-access).
 
 ### `agentctl stop <name> [--force] [--timeout <secs>]` / `agentctl delete <name> [--force]`
