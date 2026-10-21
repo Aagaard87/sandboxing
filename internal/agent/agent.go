@@ -6,6 +6,7 @@
 package agent
 
 import (
+	_ "embed"
 	"sort"
 
 	"github.com/apomonosi/sandboxing/internal/profile"
@@ -14,8 +15,9 @@ import (
 // Spec describes one installable coding agent.
 type Spec struct {
 	Name string
-	// InstallScript is a full shell command line (piped to `sh -c`, not
-	// stdin) — each agent's own documented one-liner, verbatim.
+	// InstallScript is a full shell command line (passed to `sh -c`, not
+	// stdin) — each agent's own documented one-liner, verbatim, except
+	// that pi's is preceded by nodeBootstrap and toolsBootstrap.
 	InstallScript string
 	// EnvVar is the host API key environment variable this agent expects,
 	// where the project has one obvious default. Unused until a future
@@ -58,6 +60,13 @@ type Spec struct {
 //     verbatim rather than silently bootstrapping Node, since that
 //     would be agentctl inventing an install path the agent's own docs
 //     don't describe; see docs/user/agent-provisioning.md.
+//   - pi's installer needs Node.js >= 22.19.0 and only offers to install
+//     it when it has a terminal, which `create --agent` never gives it,
+//     so its one-liner is preceded by nodeBootstrap. gemini could reuse
+//     the same bootstrap (its floor, Node 20, is below the v22 line it
+//     installs); that is a separate change. pi also downloads ripgrep and
+//     fd from github.com at first use, which egress refuses, so
+//     toolsBootstrap installs them from the distribution first.
 //   - cursor's runtime traffic is spread across more domains than any
 //     other entry here; its preset covers install plus the primary API
 //     path, and anything beyond that is a --allow extension.
@@ -82,7 +91,7 @@ var Registry = map[string]Spec{
 	},
 	"pi": {
 		Name:          "pi",
-		InstallScript: "curl -fsSL https://pi.dev/install.sh | sh",
+		InstallScript: piInstallScript,
 		EnvVar:        "ANTHROPIC_API_KEY",
 		AllowDomains:  presetRules("pi"),
 	},
@@ -108,6 +117,31 @@ var Registry = map[string]Spec{
 		AllowDomains:  presetRules("cursor"),
 	},
 }
+
+// nodeBootstrap defines agentctl_ensure_node, which installs Node.js in
+// the guest unless a new enough one is already on PATH. See the script's
+// header for what it does on each kind of guest.
+//
+//go:embed node-bootstrap.sh
+var nodeBootstrap string
+
+// toolsBootstrap defines agentctl_ensure_tools, which installs ripgrep and
+// fd with the guest's package manager when they are missing, and never
+// fails the install.
+//
+//go:embed tools-bootstrap.sh
+var toolsBootstrap string
+
+// piInstallScript is pi's documented one-liner, after installing ripgrep
+// and fd where the package source is reachable and making sure Node.js is
+// at least the 22.19.0 pi's installer requires. pi installs into
+// ~/.pi/agent/bin and adds that to no PATH, so once its installer has
+// succeeded, agentctl_agent_on_path puts it there via ~/.profile.
+var piInstallScript = nodeBootstrap + toolsBootstrap +
+	"agentctl_ensure_tools pi\n" +
+	"agentctl_ensure_node pi 22.19.0\n" +
+	"curl -fsSL https://pi.dev/install.sh | sh || exit\n" +
+	"agentctl_agent_on_path pi .pi/agent/bin"
 
 // presetRules returns the allow rules of the built-in preset called name.
 // The registry and the preset table are both static, so a missing preset

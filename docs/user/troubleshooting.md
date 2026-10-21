@@ -226,6 +226,42 @@ An already-successful install is never repeated: `create --agent=<name>`
 records success once the install script exits `0`, and every subsequent
 `start` is a no-op with respect to the agent.
 
+## `--agent=pi` fails with "No terminal detected; install Node.js 22.19.0 or newer and npm"
+
+That message comes from pi's own installer, on agentctl builds from before
+agentctl started providing Node.js for pi. pi needs Node.js 22.19.0 or newer
+and only offers to install it when it has a terminal, which an agent install
+never has, so on an image without Node it stops there.
+
+Upgrade agentctl: current builds install Node before running pi's installer
+(see [Agent Provisioning](agent-provisioning.md#built-in-registry)), and the
+next `agentctl start <name>` retries the incomplete install. To fix an
+instance without upgrading, put Node into it yourself, for example on a
+glibc guest by unpacking a `node-v22.*-linux-<arch>.tar.xz` from
+`https://nodejs.org/dist/latest-v22.x/` into `/usr/local` (`sudo tar -xJf
+<file> -C /usr/local --strip-components=1`), then `agentctl start <name>`
+to retry.
+
+## pi says "fd not found. Downloading…" then "proxy response 403 !== 200 when HTTP tunneling"
+
+```text
+fd not found. Downloading…
+Failed to download fd: fetch failed… proxy response 403 !== 200 when HTTP tunneling
+```
+
+and the same for ripgrep. pi uses fd and ripgrep for file search and
+downloads them from `github.com` at first use when they are not on `PATH`;
+the sandbox's egress policy refuses that, so pi runs without them.
+
+`create --agent=pi` installs both from the distribution before pi's
+installer, but only when the instance can reach its package source. If
+the install printed `agentctl: pi: could not install ripgrep and fd`,
+recreate the instance with `--allow-preset apt` (Debian/Ubuntu) or
+`--allow-preset apk` (Alpine). For an existing instance, install them
+yourself where the package source is reachable, for example
+`agentctl exec --root <name> -- apt-get install -y ripgrep fd-find` on
+Debian/Ubuntu; pi also finds Debian's `fdfind` binary under that name.
+
 ## An agent installed successfully but `claude`/`codex`/... is "command not found"
 
 Almost always a `PATH` problem rather than a failed install, and the fix is

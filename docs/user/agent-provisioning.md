@@ -65,12 +65,28 @@ to sign in and talk to its default model provider:
   `api.github.com` and downloads it from `github.com`, which redirects to
   `release-assets.githubusercontent.com`; opencode fetches its model
   catalog from `models.opencode.ai` at startup.
-- **pi**: the installer installs pi from the npm registry, installing
-  Node.js first if the image doesn't have it (stock Ubuntu images don't).
-  `nodejs.org` is agentctl's assumption about where that Node.js download
-  comes from, not something read out of pi's installer — if `--agent=pi`
-  fails on a blocked host, the install output names it; add it with
-  `--allow`.
+- **pi**: the installer installs pi from the npm registry and needs
+  Node.js 22.19.0 or newer. It only offers to install Node itself when it
+  has a terminal, which it never has under agentctl, so agentctl provides
+  Node first. If `node -v` already reports 22.19.0 or newer, nothing
+  changes. Otherwise, on a glibc guest (Ubuntu, Debian, Fedora) agentctl
+  installs the latest Node 22 LTS release from `nodejs.org/dist/latest-v22.x`,
+  verifies it against that release's `SHASUMS256.txt` and unpacks it into
+  `/usr/local`; on Alpine it runs `apk add nodejs npm` and fails with the
+  version it found if that is older than 22.19.0. Without passwordless
+  sudo, the nodejs.org build goes into `~/.local/node` instead, and a line
+  putting `~/.local/node/bin` on `PATH` is added to `~/.profile`. Then pi's
+  installer runs unchanged, and agentctl puts pi's `~/.pi/agent/bin` on
+  `PATH` the same way, via `~/.profile`, so `agentctl shell` finds `pi` by
+  name. A failure prints a line starting
+  `agentctl: pi:`, and `agentctl start <name>` retries the install.
+  pi also wants ripgrep and fd, and downloads them from `github.com` at
+  first use if they are missing, which the egress policy refuses; so
+  before pi's installer agentctl installs them from the distribution
+  (`apt-get`, `apk` or `dnf`) when the instance allows that package source
+  (`--allow-preset apt` on Debian/Ubuntu, `--allow-preset apk` on Alpine),
+  and otherwise prints one `agentctl: pi:` line saying so and carries on,
+  leaving pi without them.
 
 Every host is named outright, never as a wildcard: Lima's egress proxy
 would match a `*.example.com` entry against each hostname, but Incus
