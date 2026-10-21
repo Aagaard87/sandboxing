@@ -25,6 +25,22 @@ supported on each provider today.
 Run `agentctl config set provider=<incus|lima|hyperv>`, or pass
 `--provider=<name>` for a one-off override.
 
+## Lima: `create` fails with "is not a Lima image reference"
+
+The Lima backend has no image store: `--image` (or a spec's `image:`) must be
+a Lima template reference, a URL, or a local template path, not an Incus
+reference such as `images:ubuntu/24.04`. agentctl refuses the Incus form before
+doing anything, and suggests the matching template where it can:
+
+```console
+$ agentctl create demo --image=images:ubuntu/24.04
+agentctl: image "images:ubuntu/24.04" is not a Lima image reference: ... did you mean --image=template://ubuntu-24.04 ? (template://ubuntu-lts is the usual choice)
+```
+
+Use `--image=template://ubuntu-lts`, or pick another name from
+`limactl template ls`. The suggestion is a guess, so check that it is listed.
+See [Lima setup](../admin/providers/lima-setup.md).
+
 ## `exec: "incus": executable file not found in $PATH`
 
 The Incus backend shells out to the `incus` CLI rather than linking a Go SDK
