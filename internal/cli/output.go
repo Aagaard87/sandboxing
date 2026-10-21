@@ -47,6 +47,9 @@ func RenderInstance(w io.Writer, inst *provider.Instance, jsonOutput bool) error
 	if !inst.CreatedAt.IsZero() {
 		fmt.Fprintf(tw, "Created:\t%s\n", inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
 	}
+	if inst.Confinement != "" {
+		fmt.Fprintf(tw, "Confinement:\t%s\n", inst.Confinement)
+	}
 	return tw.Flush()
 }
 

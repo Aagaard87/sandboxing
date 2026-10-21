@@ -144,6 +144,21 @@ func renderMounts(w io.Writer, mounts []provider.Mount, jsonOutput bool) {
 	}
 }
 
+// renderConfinement prints what the backend's start-time network
+// confinement check found, if it ran one. Under --output json it prints
+// nothing, like renderMounts: the value is on the instance itself.
+func renderConfinement(w io.Writer, confinement string, jsonOutput bool) {
+	if jsonOutput {
+		return
+	}
+	switch confinement {
+	case provider.ConfinementVerified:
+		fmt.Fprintln(w, "agentctl: network confinement verified: the guest could not reach the internet except through its egress proxy.")
+	case provider.ConfinementUnverified:
+		fmt.Fprintln(w, "agentctl: network confinement not verified: the guest has no curl, no bash with timeout, and no python3 to probe with; the sandbox-exec profile is in place but unproven in this guest.")
+	}
+}
+
 // renderPreflight prints any host-configuration warnings the active
 // provider reports. Backends that don't implement provider.Preflighter
 // are skipped entirely, the same way tryPreview handles CommandPreviewer.

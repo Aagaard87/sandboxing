@@ -555,18 +555,44 @@ func (p *Provider) startConfined(ctx context.Context, name string) error {
 	if verdict == "open" {
 		return abort(fmt.Errorf("network confinement check failed for %q: the guest reached %s directly, bypassing its egress proxy, so agentctl stopped it. Lima's processes don't appear to be running under agentctl's macOS sandbox; please report this with your macOS and `limactl --version` versions", name, egressProbeTarget))
 	}
-	return p.recordConfinedHostAgent(ctx, name)
+	return p.recordConfinedHostAgent(ctx, name, verdict)
 }
 
 // recordConfinedHostAgent remembers the PID of the hostagent agentctl just
 // started under its sandbox, so a later start can tell "running, and
-// confined by agentctl" from "running, started some other way".
-func (p *Provider) recordConfinedHostAgent(ctx context.Context, name string) error {
+// confined by agentctl" from "running, started some other way", along
+// with what the in-guest check found, for Status to report.
+func (p *Provider) recordConfinedHostAgent(ctx context.Context, name, verdict string) error {
 	j, err := p.inspect(ctx, name)
 	if err != nil {
 		return err
 	}
-	return updateInstanceState(name, func(st *instanceState) { st.ConfinedHostAgentPID = j.HostAgentPID })
+	return updateInstanceState(name, func(st *instanceState) {
+		st.ConfinedHostAgentPID = j.HostAgentPID
+		st.EgressVerdict = verdict
+	})
+}
+
+// confinement reports the recorded confinement check for j as a
+// provider.Instance.Confinement value — but only while j's hostagent is
+// still the one agentctl started confined (the same check resumeConfined
+// makes), so a `limactl stop` or a reboot doesn't leave a stale verdict.
+func confinement(j limaInstanceJSON) string {
+	s, err := loadState()
+	if err != nil {
+		return ""
+	}
+	st := s.Instances[j.Name]
+	if j.HostAgentPID == 0 || j.HostAgentPID != st.ConfinedHostAgentPID || j.AutoStartedIdentifier != "" {
+		return ""
+	}
+	switch st.EgressVerdict {
+	case "blocked":
+		return provider.ConfinementVerified
+	case "unverified":
+		return provider.ConfinementUnverified
+	}
+	return ""
 }
 
 // resumeConfined handles Start on an instance that's already running.
@@ -625,5 +651,8 @@ func (p *Provider) stopEgress(ctx context.Context, name string) error {
 	if err := p.proxy.Stop(ctx, paths); err != nil {
 		return fmt.Errorf("instance %q stopped, but stopping its egress proxy failed: %w", name, err)
 	}
-	return updateInstanceState(name, func(st *instanceState) { st.ConfinedHostAgentPID = 0 })
+	return updateInstanceState(name, func(st *instanceState) {
+		st.ConfinedHostAgentPID = 0
+		st.EgressVerdict = ""
+	})
 }

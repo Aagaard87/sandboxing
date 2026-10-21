@@ -36,6 +36,9 @@ type instanceState struct {
 	// ConfinedHostAgentPID is the hostagent agentctl last started under its
 	// network sandbox, while it's running.
 	ConfinedHostAgentPID int `yaml:"confinedHostAgentPID,omitempty"`
+	// EgressVerdict is what the in-guest check found when agentctl started
+	// that hostagent: "blocked" or "unverified" (see egressVerdict).
+	EgressVerdict string `yaml:"egressVerdict,omitempty"`
 	// Unrestricted records `create --no-network-policy`: this instance
 	// boots without the network sandbox and egress proxy. Only an explicit
 	// true here does that — a missing or unreadable entry means confined.

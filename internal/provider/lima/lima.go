@@ -200,6 +200,9 @@ func (p *Provider) Status(ctx context.Context, name string) (*provider.Instance,
 		return nil, err
 	}
 	inst := toInstance(j)
+	if p.confine {
+		inst.Confinement = confinement(j)
+	}
 	return &inst, nil
 }
 

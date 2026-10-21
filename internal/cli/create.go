@@ -212,6 +212,7 @@ func newCreateCmd() *cobra.Command {
 				}
 				if updated, err := p.Status(cmd.Context(), name); err == nil {
 					inst = updated
+					renderConfinement(w, inst.Confinement, jsonOutput(cmd))
 				}
 				if err := installAgent(cmd.Context(), w, p, name, agentSpec); err != nil {
 					return err
