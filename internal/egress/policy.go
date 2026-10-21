@@ -20,7 +20,11 @@ import (
 //     off, if it's on the LAN.
 //   - DenyLAN on: LAN/link-local destinations are refused even when an
 //     allow rule matches them, the way Incus drops an allow rule's LAN
-//     addresses under --deny-lan.
+//     addresses under --deny-lan. The one exception is a rule written as
+//     an IP literal in a private range with its ports listed (see
+//     permitsLiteral): that exact address is reachable on those ports.
+//     Link-local addresses (cloud metadata lives there) and hostnames
+//     that resolve into the LAN stay refused.
 //   - DenyLAN off (--allow-lan): LAN/link-local destinations are
 //     reachable on any port whether or not an allow rule names them, the
 //     way Incus adds explicit allow rules for the private ranges.
@@ -50,18 +54,25 @@ type AllowRule struct {
 // unreadable: nothing is allowed, so a broken setup fails closed.
 var denyAll = Policy{DenyLAN: true}
 
-// lanNetworks is what DenyLAN refuses: the same IPv4 ranges the Incus
-// backend rejects (rfc1918AndLinkLocal in internal/provider/incus), plus
-// their IPv6 counterparts (unique-local fc00::/7 and link-local fe80::/10),
-// since the host the proxy runs on may have IPv6 reachability into the LAN
-// even when the guest itself is IPv4-only.
-var lanNetworks = mustParseCIDRs(
-	"10.0.0.0/8",
-	"172.16.0.0/12",
-	"192.168.0.0/16",
-	"169.254.0.0/16",
-	"fc00::/7",
-	"fe80::/10",
+// privateNetworks and linkLocalNetworks together are what DenyLAN
+// refuses: the same IPv4 ranges the Incus backend withholds (privateRanges
+// in internal/provider/incus), plus their IPv6 counterparts (unique-local
+// fc00::/7 and link-local fe80::/10), since the host the proxy runs on may
+// have IPv6 reachability into the LAN even when the guest itself is
+// IPv4-only. They're split because an explicit IP-literal allow rule can
+// open a private address but never a link-local one.
+var (
+	privateNetworks = mustParseCIDRs(
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"fc00::/7",
+	)
+	linkLocalNetworks = mustParseCIDRs(
+		"169.254.0.0/16",
+		"fe80::/10",
+	)
+	lanNetworks = append(append([]*net.IPNet(nil), privateNetworks...), linkLocalNetworks...)
 )
 
 // thisNetwork (0.0.0.0/8) addresses the local host on most stacks, so it
@@ -119,6 +130,23 @@ func (p Policy) permits(host string, port int) bool {
 	return false
 }
 
+// permitsLiteral reports whether host is an IP literal that some allow
+// rule names exactly, with port among the rule's listed ports. A rule
+// without ports doesn't count: under DenyLAN this is what lets a single
+// LAN host:port through, and "any port" is not a narrow exception.
+// host must already be normalized (see normalizeHost).
+func (p Policy) permitsLiteral(host string, port int) bool {
+	if net.ParseIP(host) == nil {
+		return false
+	}
+	for _, r := range p.Allow {
+		if r.Domain == host && len(r.Ports) > 0 && portAllowed(r.Ports, port) {
+			return true
+		}
+	}
+	return false
+}
+
 func matchDomain(pattern, host string) bool {
 	if apex, ok := strings.CutPrefix(pattern, "*."); ok {
 		return host == apex || strings.HasSuffix(host, "."+apex)
@@ -160,8 +188,10 @@ func isLAN(ip net.IP) bool {
 // blockedReason returns why ip must not be dialed under p, or "" if it
 // may be. It's applied to every address a hostname resolves to, at
 // connection time, so a name that later starts resolving into the LAN
-// (DNS rebinding) is refused too.
-func (p Policy) blockedReason(ip net.IP) string {
+// (DNS rebinding) is refused too. explicit says the request named ip as a
+// literal that an allow rule lists with this port (see permitsLiteral);
+// under DenyLAN that opens a private address, and nothing else.
+func (p Policy) blockedReason(ip net.IP, explicit bool) string {
 	ip = canonicalIP(ip)
 	switch {
 	case ip.IsLoopback():
@@ -170,7 +200,9 @@ func (p Policy) blockedReason(ip net.IP) string {
 		return "unspecified address (would reach the host itself)"
 	case ip.IsMulticast() || ip.Equal(net.IPv4bcast):
 		return "multicast or broadcast address"
-	case p.DenyLAN && inAny(ip, lanNetworks):
+	case p.DenyLAN && inAny(ip, linkLocalNetworks):
+		return "link-local address, refused under deny-LAN even when listed"
+	case p.DenyLAN && !explicit && inAny(ip, privateNetworks):
 		return "LAN or link-local address, refused because deny-LAN is on"
 	}
 	return ""

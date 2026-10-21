@@ -161,6 +161,16 @@ func newCreateCmd() *cobra.Command {
 				}
 			}
 
+			// Checked here rather than left to the backends, which would
+			// refuse these entries at run time with nothing said at create.
+			var lanEntries []string
+			if !unrestricted {
+				lanEntries, err = profile.CheckLANLiterals(policy.Network.AllowRules(), policy.Network.DenyLAN)
+				if err != nil {
+					return err
+				}
+			}
+
 			instSpec, err := spec.ToInstanceSpec(name, resolvedImage, profileNames, policy, previewRequested(cmd))
 			if err != nil {
 				return err
@@ -177,6 +187,16 @@ func newCreateCmd() *cobra.Command {
 				return pv.PreviewCreate(instSpec)
 			}); handled {
 				return err
+			}
+
+			if !jsonOutput(cmd) {
+				for _, e := range lanEntries {
+					which := "that port"
+					if strings.Contains(e, ",") {
+						which = "those ports"
+					}
+					fmt.Fprintf(w, "agentctl: allow entry %s is a LAN address; it is reachable on %s only, and deny-LAN stays on for the rest of the network.\n", e, which)
+				}
 			}
 
 			if len(instSpec.Packages) > 0 {
@@ -227,7 +247,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&profiles, "profile", nil, "named security profile(s) to apply, in order (repeatable)")
 	// StringArray, not StringSlice, for --allow and --allow-file: a slice
 	// flag splits its value at commas, which would cut "host:80,443" in two.
-	cmd.Flags().StringArrayVar(&allow, "allow", nil, "egress allowlist entry: \"host[:port,port]\", \"*.domain[:ports]\", or an http(s):// URL (repeatable)")
+	cmd.Flags().StringArrayVar(&allow, "allow", nil, "egress allowlist entry: \"host[:port,port]\", \"*.domain[:ports]\", or an http(s):// URL (repeatable); an IP address in a private range with ports set is permitted even under --deny-lan")
 	cmd.Flags().StringArrayVar(&allowFiles, "allow-file", nil, "file of egress allowlist entries, one --allow value per line, # for comments (repeatable)")
 	cmd.Flags().StringSliceVar(&allowPresets, "allow-preset", nil, "allow a built-in group of hosts (package sources, git hosts, coding agents): "+strings.Join(profile.PresetNames(), ", ")+" (repeatable; \"agentctl profile presets\" lists their hosts)")
 	cmd.Flags().BoolVar(&denyLAN, "deny-lan", true, "block egress to RFC1918/link-local ranges")

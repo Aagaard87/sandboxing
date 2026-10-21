@@ -48,6 +48,52 @@ func isPrivateAddr(addr string) bool {
 	return ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLoopback() || ip.IsUnspecified()
 }
 
+// denyLANDropReason says why, under --deny-lan, an allow rule's resolved
+// address addr must not become an ACL allow rule, or "" if it may. It is
+// the Incus side of the egress proxy's blockedReason/permitsLiteral pair
+// (internal/egress), so both backends agree: a public address is fine; a
+// private one (RFC 1918, RFC 4193) only when the rule itself is that IP
+// literal with its ports listed; link-local, loopback and unspecified
+// never — link-local is where cloud metadata services live.
+func denyLANDropReason(rule provider.AllowRule, addr string) string {
+	if !isPrivateAddr(addr) {
+		return ""
+	}
+	ip := net.ParseIP(addr)
+	switch {
+	case ip == nil:
+		return "not an IP address"
+	case ip.IsLinkLocalUnicast():
+		return "link-local address, refused under deny-LAN even when listed"
+	case !ip.IsPrivate():
+		return "loopback or unspecified address"
+	}
+	switch literal := net.ParseIP(strings.Trim(rule.Domain, "[]")); {
+	case literal == nil || !literal.Equal(ip):
+		return "domain resolves to a LAN address, refused because deny-LAN is on"
+	case len(rule.Ports) == 0:
+		return "LAN address listed without ports; deny-LAN permits a LAN host only on listed ports"
+	}
+	return ""
+}
+
+// denyLANDrops lists, one line per address, what networkACLCommands will
+// leave out of the ACL under --deny-lan, for ApplyNetworkPolicy to report.
+func denyLANDrops(policy provider.NetworkPolicy, resolvedAllowIPs map[string][]string) []string {
+	if !policy.DenyLAN {
+		return nil
+	}
+	var out []string
+	for _, rule := range policy.Allow {
+		for _, ip := range resolvedAllowIPs[rule.Domain] {
+			if r := denyLANDropReason(rule, ip); r != "" {
+				out = append(out, fmt.Sprintf("allow entry %q: not allowing %s: %s", rule.Domain, ip, r))
+			}
+		}
+	}
+	return out
+}
+
 // aclName returns the deterministic per-instance network ACL name.
 func aclName(instanceName string) string {
 	return "agentctl-" + instanceName
@@ -439,11 +485,15 @@ func networkACLCommands(instanceName string, policy provider.NetworkPolicy, reso
 			// With deny-lan on, an allow-domain that resolves to a LAN
 			// address is dropped rather than emitted. Incus can't express
 			// "allow this, except on the LAN" — a reject rule would
-			// shadow every other allow, so the conflict has to be
+			// shadow every other allow, and Incus re-sorts rules by
+			// action, so their order can't be relied on either. Deny-LAN
+			// is implemented by omission, so the conflict has to be
 			// resolved here, at generation time. Dropping it keeps
 			// deny-lan's promise; the rule's absence is visible in
-			// --preview.
-			if policy.DenyLAN && isPrivateAddr(ip) {
+			// --preview. The one LAN address kept is the narrow
+			// exception denyLANDropReason describes: a private IP
+			// literal the rule names, on the rule's ports only.
+			if policy.DenyLAN && denyLANDropReason(rule, ip) != "" {
 				continue
 			}
 			ruleArgs := []string{"network", "acl", "rule", "add", acl, "egress",

@@ -44,6 +44,25 @@ resolves to a LAN address, that rule is silently dropped rather than applied,
 since "allow this host, but not the LAN" can't be expressed in a single ACL.
 `--preview` shows exactly which rules survive.
 
+If the host you need is one machine — a model server, a mirror — list it by
+IP address with its ports instead, `--allow=10.20.30.40:8080`: that one
+host:port is reachable while deny-LAN stays on for everything else (see
+[Egress allowlist](profiles-and-policies.md#egress-allowlist)).
+
+## `create` fails with "allow entry … is a LAN address: list the port(s) you need"
+
+```
+Error: allow entry "10.20.30.40" is a LAN address: list the port(s) you need (e.g. 10.20.30.40:8080); deny-LAN permits a LAN host only on listed ports
+```
+
+Under deny-LAN, a private IP address on the allowlist is honoured only on
+the ports it lists; "any port" on a LAN host isn't a narrow exception, so
+`create` refuses it rather than letting it fail later. List the host:port as
+an IP literal — `--allow=10.20.30.40:8080` — or, if you really want the
+whole LAN on any port, pass `--allow-lan`. A link-local (`169.254.x.x`,
+`fe80::`) or loopback address is refused the same way whatever its ports:
+deny-LAN never opens those.
+
 ## Nothing in the sandbox can reach the network / `curl` fails during an agent install
 
 Run the diagnostic first — it walks every layer below and prints which one is

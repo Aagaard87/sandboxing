@@ -79,14 +79,25 @@ example above).
   list the subdomains you need by name if you use Incus or want a profile
   to work on both. agentctl's own presets, agent lists and built-in
   profiles do exactly that, and never use wildcards.
-- **Internal hosts mean opening the LAN.** Deny-LAN refuses private
-  (RFC1918/link-local) addresses even when they're on the allowlist, so a
-  self-hosted GitLab or package mirror at a `10.x.x.x` address stays
-  unreachable unless you create the instance with `--allow-lan` (or
+- **Internal hosts by name mean opening the LAN.** Deny-LAN refuses private
+  (RFC1918/link-local) addresses even when an allowlisted hostname resolves
+  to them, so a self-hosted GitLab or package mirror reached by name at a
+  `10.x.x.x` address stays unreachable unless you list it by address (next
+  point) or create the instance with `--allow-lan` (or
   `denyLAN: false`). Know what that opens: `--allow-lan` makes your
   *whole* LAN reachable on any port — every private address, on both
   backends — not just the internal host you had in mind. Internet egress
   stays default-deny either way.
+- **One internal host: list it as an IP address with its ports.** An
+  allow entry written as an IP address in a private range (`10/8`,
+  `172.16/12`, `192.168/16`, `fc00::/7`), with its ports, is honoured under
+  deny-LAN on both backends, for exactly those ports. For a local model
+  server: `--allow=10.20.30.40:8080`. `create` says so when it applies the
+  entry, and the rest of the LAN stays refused. Still refused, even when
+  listed: link-local addresses (`169.254/16`, `fe80::/10`, where cloud
+  metadata services live), loopback, and any hostname that resolves into
+  the LAN. A LAN address without ports is an error at `create`: list the
+  ports you need, or use `--allow-lan` if you really want the whole LAN.
 
 ## Allowing package sources and git hosts
 

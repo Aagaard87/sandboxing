@@ -261,3 +261,41 @@ func TestValidate_RejectsDomainsThatCanNeverMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckLANLiterals(t *testing.T) {
+	rules := []AllowRule{
+		{Domain: "pypi.org", Ports: []int{443}},
+		{Domain: "203.0.113.7"},
+		{Domain: "10.20.30.40", Ports: []int{8080}},
+		{Domain: "fd00::5", Ports: []int{443, 8443}},
+		{Domain: "10.20.30.40", Ports: []int{8080}}, // listed twice, announced once
+	}
+	got, err := CheckLANLiterals(rules, true)
+	if err != nil {
+		t.Fatalf("CheckLANLiterals: %v", err)
+	}
+	if want := []string{"10.20.30.40:8080", "[fd00::5]:443,8443"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("CheckLANLiterals = %q, want %q", got, want)
+	}
+
+	for _, c := range []struct {
+		rule AllowRule
+		want string
+	}{
+		{AllowRule{Domain: "10.20.30.40"}, `allow entry "10.20.30.40" is a LAN address: list the port(s) you need (e.g. 10.20.30.40:8080); deny-LAN permits a LAN host only on listed ports`},
+		{AllowRule{Domain: "fd00::5"}, `(e.g. [fd00::5]:8080)`},
+		{AllowRule{Domain: "169.254.169.254", Ports: []int{80}}, "link-local"},
+		{AllowRule{Domain: "fe80::1", Ports: []int{80}}, "link-local"},
+		{AllowRule{Domain: "127.0.0.1", Ports: []int{8080}}, "loopback"},
+	} {
+		_, err := CheckLANLiterals([]AllowRule{c.rule}, true)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("CheckLANLiterals(%+v) error = %v, want it to contain %q", c.rule, err, c.want)
+		}
+	}
+
+	// Without deny-LAN, nothing is checked or announced.
+	if got, err := CheckLANLiterals([]AllowRule{{Domain: "10.20.30.40"}, {Domain: "169.254.169.254"}}, false); err != nil || got != nil {
+		t.Errorf("CheckLANLiterals without deny-LAN = %q, %v; want nil, nil", got, err)
+	}
+}

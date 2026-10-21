@@ -46,6 +46,37 @@ func TestPolicyPermits(t *testing.T) {
 	}
 }
 
+func TestPolicyPermitsLiteral(t *testing.T) {
+	pol := Policy{DenyLAN: true, Allow: []AllowRule{
+		{Domain: "10.20.30.40", Ports: []int{8080}},
+		{Domain: "[fd00::5]", Ports: []int{443}},
+		{Domain: "192.168.1.9"}, // no ports: never an explicit LAN opening
+		{Domain: "lanhost.example", Ports: []int{8080}},
+		{Domain: "*.corp.example", Ports: []int{8080}},
+	}}
+	if err := pol.validateAndNormalize(); err != nil {
+		t.Fatalf("validateAndNormalize: %v", err)
+	}
+	cases := []struct {
+		host string
+		port int
+		want bool
+	}{
+		{"10.20.30.40", 8080, true},      // literal rule, listed port
+		{"10.20.30.40", 22, false},       // wrong port
+		{"[fd00::5]", 443, true},         // IPv6 literal in brackets
+		{"192.168.1.9", 80, false},       // literal rule without ports
+		{"lanhost.example", 8080, false}, // domain rule
+		{"a.corp.example", 8080, false},  // wildcard rule
+		{"10.20.30.41", 8080, false},     // unlisted literal
+	}
+	for _, c := range cases {
+		if got := pol.permitsLiteral(normalizeHost(c.host), c.port); got != c.want {
+			t.Errorf("permitsLiteral(%q, %d) = %v, want %v", c.host, c.port, got, c.want)
+		}
+	}
+}
+
 func TestNormalizeHost(t *testing.T) {
 	cases := map[string]string{
 		"PyPI.org.":            "pypi.org",
@@ -105,11 +136,49 @@ func TestBlockedReason(t *testing.T) {
 		if ip == nil {
 			t.Fatalf("bad test IP %q", c.ip)
 		}
-		if got := denyLAN.blockedReason(ip) != ""; got != c.blockedDeny {
-			t.Errorf("DenyLAN: blocked(%s) = %v, want %v (reason %q)", c.ip, got, c.blockedDeny, denyLAN.blockedReason(ip))
+		if got := denyLAN.blockedReason(ip, false) != ""; got != c.blockedDeny {
+			t.Errorf("DenyLAN: blocked(%s) = %v, want %v (reason %q)", c.ip, got, c.blockedDeny, denyLAN.blockedReason(ip, false))
 		}
-		if got := allowLAN.blockedReason(ip) != ""; got != c.blockedAllow {
-			t.Errorf("allow-LAN: blocked(%s) = %v, want %v (reason %q)", c.ip, got, c.blockedAllow, allowLAN.blockedReason(ip))
+		if got := allowLAN.blockedReason(ip, false) != ""; got != c.blockedAllow {
+			t.Errorf("allow-LAN: blocked(%s) = %v, want %v (reason %q)", c.ip, got, c.blockedAllow, allowLAN.blockedReason(ip, false))
+		}
+	}
+}
+
+// An explicit IP-literal allow rule (see permitsLiteral) opens a private
+// address under deny-LAN, and nothing else: link-local, loopback and the
+// other always-refused ranges stay refused.
+func TestBlockedReason_Explicit(t *testing.T) {
+	denyLAN := Policy{DenyLAN: true}
+	cases := []struct {
+		ip                string
+		blockedImplicit   bool
+		blockedExplicit   bool
+		wantExplicitWords string // substring of the explicit reason, if blocked
+	}{
+		{"10.20.30.40", true, false, ""},
+		{"172.16.0.1", true, false, ""},
+		{"192.168.1.1", true, false, ""},
+		{"fd00::1", true, false, ""},
+		{"::ffff:192.168.1.1", true, false, ""},
+		{"169.254.169.254", true, true, "link-local"},
+		{"fe80::1", true, true, "link-local"},
+		{"127.0.0.1", true, true, "loopback"},
+		{"::1", true, true, "loopback"},
+		{"0.0.0.0", true, true, "unspecified"},
+		{"224.0.0.1", true, true, "multicast"},
+	}
+	for _, c := range cases {
+		ip := net.ParseIP(c.ip)
+		if got := denyLAN.blockedReason(ip, false) != ""; got != c.blockedImplicit {
+			t.Errorf("blocked(%s, explicit=false) = %v, want %v", c.ip, got, c.blockedImplicit)
+		}
+		r := denyLAN.blockedReason(ip, true)
+		if got := r != ""; got != c.blockedExplicit {
+			t.Errorf("blocked(%s, explicit=true) = %v, want %v (reason %q)", c.ip, got, c.blockedExplicit, r)
+		}
+		if !strings.Contains(r, c.wantExplicitWords) {
+			t.Errorf("blocked(%s, explicit=true) reason %q, want it to mention %q", c.ip, r, c.wantExplicitWords)
 		}
 	}
 }
