@@ -16,8 +16,11 @@ import (
 type Spec struct {
 	Name string
 	// InstallScript is a full shell command line (passed to `sh -c`, not
-	// stdin) — each agent's own documented one-liner, verbatim, except
-	// that pi's is preceded by nodeBootstrap and toolsBootstrap.
+	// stdin) — each agent's own documented install command. A curl
+	// one-liner piped into a shell is run through fetchRun instead, with
+	// the agent's own URL, shell and curl flags, so a refused download
+	// fails the install rather than running an empty script; pi's is
+	// additionally preceded by nodeBootstrap and toolsBootstrap.
 	InstallScript string
 	// EnvVar is the host API key environment variable this agent expects,
 	// where the project has one obvious default. Unused until a future
@@ -67,25 +70,28 @@ type Spec struct {
 //     installs); that is a separate change. pi also downloads ripgrep and
 //     fd from github.com at first use, which egress refuses, so
 //     toolsBootstrap installs them from the distribution first.
+//   - every curl installer is fetched to a file by fetchRun and only run
+//     once curl has succeeded, rather than piped into a shell: a pipeline
+//     exits with the shell's status, and a shell given nothing exits 0.
 //   - cursor's runtime traffic is spread across more domains than any
 //     other entry here; its preset covers install plus the primary API
 //     path, and anything beyond that is a --allow extension.
 var Registry = map[string]Spec{
 	"claude": {
 		Name:          "claude",
-		InstallScript: "curl -fsSL https://claude.ai/install.sh | bash",
+		InstallScript: fetchRun + "agentctl_fetch_run claude bash https://claude.ai/install.sh -fsSL",
 		EnvVar:        "ANTHROPIC_API_KEY",
 		AllowDomains:  presetRules("claude"),
 	},
 	"codex": {
 		Name:          "codex",
-		InstallScript: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+		InstallScript: fetchRun + "agentctl_fetch_run codex sh https://chatgpt.com/codex/install.sh -fsSL",
 		EnvVar:        "OPENAI_API_KEY",
 		AllowDomains:  presetRules("codex"),
 	},
 	"opencode": {
 		Name:          "opencode",
-		InstallScript: "curl -fsSL https://opencode.ai/install | bash",
+		InstallScript: fetchRun + "agentctl_fetch_run opencode bash https://opencode.ai/install -fsSL",
 		EnvVar:        "",
 		AllowDomains:  presetRules("opencode"),
 	},
@@ -109,10 +115,9 @@ var Registry = map[string]Spec{
 	},
 	"cursor": {
 		Name: "cursor",
-		// Cursor's own documented form: flags after the URL, and no -L.
-		// Kept verbatim rather than normalized to match the other curl
-		// entries above.
-		InstallScript: "curl https://cursor.com/install -fsS | bash",
+		// Cursor's own documented flags: -fsS, and no -L. Kept rather
+		// than normalized to match the other curl entries above.
+		InstallScript: fetchRun + "agentctl_fetch_run cursor bash https://cursor.com/install -fsS",
 		EnvVar:        "CURSOR_API_KEY",
 		AllowDomains:  presetRules("cursor"),
 	},
@@ -137,11 +142,18 @@ var toolsBootstrap string
 // at least the 22.19.0 pi's installer requires. pi installs into
 // ~/.pi/agent/bin and adds that to no PATH, so once its installer has
 // succeeded, agentctl_agent_on_path puts it there via ~/.profile.
-var piInstallScript = nodeBootstrap + toolsBootstrap +
+var piInstallScript = nodeBootstrap + toolsBootstrap + fetchRun +
 	"agentctl_ensure_tools pi\n" +
 	"agentctl_ensure_node pi 22.19.0\n" +
-	"curl -fsSL https://pi.dev/install.sh | sh || exit\n" +
+	"agentctl_fetch_run pi sh https://pi.dev/install.sh -fsSL || exit\n" +
 	"agentctl_agent_on_path pi .pi/agent/bin"
+
+// fetchRun defines agentctl_fetch_run, which downloads an agent's
+// installer to a temporary file and runs it only if curl succeeded. See
+// the script's header for why.
+//
+//go:embed fetch-run.sh
+var fetchRun string
 
 // presetRules returns the allow rules of the built-in preset called name.
 // The registry and the preset table are both static, so a missing preset

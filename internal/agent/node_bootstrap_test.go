@@ -30,7 +30,7 @@ func TestPiInstallScript_RunsPiInstallerAfterNode(t *testing.T) {
 		t.Error("pi's install script does not start with the Node bootstrap")
 	}
 	want := "agentctl_ensure_node pi 22.19.0\n" +
-		"curl -fsSL https://pi.dev/install.sh | sh || exit\n" +
+		"agentctl_fetch_run pi sh https://pi.dev/install.sh -fsSL || exit\n" +
 		"agentctl_agent_on_path pi .pi/agent/bin"
 	if !strings.HasSuffix(script, want) {
 		t.Errorf("pi's install script should end with %q", want)

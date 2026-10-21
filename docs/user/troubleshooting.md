@@ -261,6 +261,18 @@ recreate the instance with `--allow-preset apt` (Debian/Ubuntu) or
 yourself where the package source is reachable, for example
 `agentctl exec --root <name> -- apt-get install -y ripgrep fd-find` on
 Debian/Ubuntu; pi also finds Debian's `fdfind` binary under that name.
+## Agent install fails with "could not download ... check the agent's allow preset"
+
+```text
+agentctl: pi: could not download https://pi.dev/install.sh (curl exit 22); the sandbox's egress policy may be refusing it — check the agent's allow preset
+```
+
+The agent's installer could not be downloaded — most often because the
+instance's egress policy refused its host. agentctl now fails the install
+here; it used to pipe the download straight into a shell, which ran an
+empty script, reported success and never retried. Allow the agent's
+preset (`--allow-preset=<agent>`, which `--agent=<agent>` adds for you) or
+the host the message names, then run `agentctl start <name>` to retry.
 
 ## An agent installed successfully but `claude`/`codex`/... is "command not found"
 
