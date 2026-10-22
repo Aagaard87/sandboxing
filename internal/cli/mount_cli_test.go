@@ -160,6 +160,37 @@ func TestCLI_StartWithoutMountFlagsKeepsExistingMounts(t *testing.T) {
 	}
 }
 
+// start prints the mount set Status reports, writable and read-only alike
+// — on Lima that list once came back empty however many mounts the guest
+// had, and start claimed none were exposed.
+func TestCLI_StartPrintsEachMount(t *testing.T) {
+	useIsolatedConfig(t)
+	home := useIsolatedHome(t)
+	pi01 := mustMkdir(t, filepath.Join(home, "pi01"))
+	ref := mustMkdir(t, filepath.Join(home, "ref"))
+	p := fake.New()
+
+	if _, err := execute(t, p, "create", "pibox", "--image=ubuntu", "--mount-none"); err != nil {
+		t.Fatal("create failed")
+	}
+	out, err := execute(t, p, "start", "pibox",
+		"--mount", pi01+":/home/pi.guest/work01:w", "--mount", ref+":/home/pi.guest/ref")
+	if err != nil {
+		t.Fatalf("start: %v (%s)", err, out)
+	}
+	for _, want := range []string{
+		pi01 + " -> /home/pi.guest/work01 (writable)",
+		ref + " -> /home/pi.guest/ref (read-only)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("start output %q should contain %q", out, want)
+		}
+	}
+	if strings.Contains(out, "no host directories") {
+		t.Errorf("start output %q claims no directories are exposed", out)
+	}
+}
+
 // A mount outside the profile's allowedRoots must be refused at start,
 // not just at create: the constraint is re-checked on every boot.
 func TestCLI_StartRejectsMountOutsideAllowedRoots(t *testing.T) {
