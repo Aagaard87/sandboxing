@@ -306,3 +306,31 @@ func TestCLI_CreateWithoutPreflighterIsSilent(t *testing.T) {
 		t.Errorf("a provider without Preflight should produce no warnings, got %q", out)
 	}
 }
+
+// Mounts bind at boot, so start --mount on a running instance is refused
+// with a plain error naming the fix, before anything is applied, rather
+// than leaking whatever the backend says (Lima: "cannot edit a running
+// instance").
+func TestCLI_StartMountRefusesRunningInstance(t *testing.T) {
+	useIsolatedConfig(t)
+	home := useIsolatedHome(t)
+	alpha := mustMkdir(t, filepath.Join(home, "src", "alpha"))
+	beta := mustMkdir(t, filepath.Join(home, "src", "beta"))
+	p := fake.New()
+
+	if _, err := execute(t, p, "create", "work", "--image=ubuntu", "--mount", alpha+":/workspace:w"); err != nil {
+		t.Fatal("create failed")
+	}
+	if _, err := execute(t, p, "start", "work"); err != nil {
+		t.Fatal("start failed")
+	}
+	out, err := execute(t, p, "start", "work", "--mount", beta+":/workspace:w")
+	if err == nil {
+		t.Fatalf("start --mount on a running instance = nil error, want a refusal (%s)", out)
+	}
+	const want = "cannot change mounts while work is running: stop it first with `agentctl stop work`"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
+	}
+	assertSingleMount(t, p, alpha)
+}
