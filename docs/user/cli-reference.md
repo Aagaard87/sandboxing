@@ -51,6 +51,15 @@ Creates an instance without starting it.
 | `--agent <name>` | Just-in-time install a coding agent (`claude`, `codex`, `cursor`, `gemini`, `opencode`, `pi`) — implies `start`; see [Agent Provisioning](agent-provisioning.md) |
 | `--package <name>` | Install a tool into the guest during create, before any `--agent` install (repeatable). Portable names — run `agentctl profile packages` for the table. Requesting packages defers the network ACL until after they're installed; see [Packages](../reference/profile-schema.md#packages) |
 
+A `--mount` guest path is used exactly as given. On Lima the guest user's
+home is `/home/<user>.guest`, not `/home/<user>` (`<user>` is the
+`--agent` name, or `agent`), so a mount meant to show up in a fresh
+`agentctl shell` belongs under it, for example
+`--mount ~/src/pi01:/home/pi.guest/work01:w`. A path such as
+`/home/pi/work01` is mounted all the same, but in a root-owned directory
+outside the user's home. On Incus the home is `/home/<user>`. See
+[Default non-root user](profiles-and-policies.md#default-non-root-user).
+
 Supports `--preview`/`--dry-run` (see [Preview Mode](preview-mode.md)); with
 `--agent` set, preview only shows the `create` command itself — the implied
 `start` and the install step aren't previewed and don't run under
