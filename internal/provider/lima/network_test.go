@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -1202,5 +1203,73 @@ func TestDNSPolicy_RefusedOnLima(t *testing.T) {
 				t.Errorf("Create(unrestricted) err = %v, want nil", err)
 			}
 		})
+	}
+}
+
+// TestLoopbackRule_RefusesAgentctlsOwnPorts: a loopback allow entry may
+// name a host service, but never the SSH forward or egress proxy agentctl
+// pinned for this instance or another — the sandbox would be talking to
+// its own cage, or someone else's.
+func TestLoopbackRule_RefusesAgentctlsOwnPorts(t *testing.T) {
+	fl := newFakeLima()
+	p, _ := newTestProvider(t, fl, true)
+	ctx := context.Background()
+	if err := p.Start(ctx, "demo"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	st := mustState(t, "demo")
+	loopback := func(port int) provider.NetworkPolicy {
+		return provider.NetworkPolicy{DenyLAN: true, Allow: []provider.AllowRule{{Domain: "127.0.0.1", Ports: []int{8081, port}}}}
+	}
+
+	for port, what := range map[int]string{st.SSHLocalPort: `instance "demo"'s SSH forward`, st.EgressProxyPort: `instance "demo"'s egress proxy`} {
+		err := p.ApplyNetworkPolicy(ctx, "demo", loopback(port))
+		want := fmt.Sprintf("allow entry 127.0.0.1:%d: port %d belongs to the sandbox's own plumbing (%s)", port, port, what)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("ApplyNetworkPolicy naming port %d: err = %v, want it to contain %q", port, err, want)
+		}
+
+		// Another instance's create is refused too, before limactl runs.
+		calls := len(fl.calls)
+		_, err = p.Create(ctx, provider.InstanceSpec{Name: "other", Image: "template://ubuntu-lts", Overrides: loopback(port)})
+		if err == nil || !strings.Contains(err.Error(), "belongs to the sandbox's own plumbing") {
+			t.Errorf("Create naming demo's port %d: err = %v, want the plumbing refusal", port, err)
+		}
+		if len(fl.calls) != calls {
+			t.Errorf("Create ran %v before refusing", fl.calls[calls:])
+		}
+	}
+
+	// A service port is fine, and is what the proxy is told to enforce.
+	if err := p.ApplyNetworkPolicy(ctx, "demo", provider.NetworkPolicy{DenyLAN: true, Allow: []provider.AllowRule{{Domain: "127.0.0.1", Ports: []int{8081}}}}); err != nil {
+		t.Fatalf("ApplyNetworkPolicy 127.0.0.1:8081: %v", err)
+	}
+	paths, _ := egressPathsFor("demo")
+	if pol, err := egress.LoadPolicy(paths.Policy); err != nil || len(pol.Allow) != 1 || pol.Allow[0].Domain != "127.0.0.1" {
+		t.Errorf("recorded policy = %+v, %v; want the loopback rule", pol, err)
+	}
+}
+
+// A port a loopback rule opens is never pinned for the SSH forward or the
+// proxy later, so the refusal above can't be sidestepped by ordering.
+func TestLoopbackRule_PortIsNeverPinned(t *testing.T) {
+	fl := newFakeLima()
+	p, _ := newTestProvider(t, fl, true)
+	ctx := context.Background()
+	first, second, err := pickPorts("demo", &stateFile{Instances: map[string]instanceState{}}, func(int) bool { return true }, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ApplyNetworkPolicy(ctx, "demo", provider.NetworkPolicy{DenyLAN: true, Allow: []provider.AllowRule{{Domain: "[::1]", Ports: []int{first, second}}}}); err != nil {
+		t.Fatalf("ApplyNetworkPolicy: %v", err)
+	}
+	if err := p.Start(ctx, "demo"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	st := mustState(t, "demo")
+	for _, port := range []int{st.SSHLocalPort, st.EgressProxyPort} {
+		if port == first || port == second {
+			t.Errorf("pinned port %d, which the instance's loopback rule opens", port)
+		}
 	}
 }

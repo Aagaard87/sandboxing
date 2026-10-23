@@ -101,9 +101,29 @@ example above).
   server: `--allow=10.20.30.40:8080`. `create` says so when it applies the
   entry, and the rest of the LAN stays refused. Still refused, even when
   listed: link-local addresses (`169.254/16`, `fe80::/10`, where cloud
-  metadata services live), loopback, and any hostname that resolves into
-  the LAN. A LAN address without ports is an error at `create`: list the
-  ports you need, or use `--allow-lan` if you really want the whole LAN.
+  metadata services live), loopback (see the next point), and any
+  hostname that resolves into the LAN. A LAN address without ports is an
+  error at `create`: list the ports you need, or use `--allow-lan` if you
+  really want the whole LAN.
+- **One service on this machine (Lima only): `127.0.0.1` with its port.**
+  For an inference server such as llama.cpp running on your own Mac,
+  `--allow=127.0.0.1:8081` lets the sandbox reach that one port on the
+  host and nothing else on it, under either deny-LAN setting; `create`
+  says so when it applies the entry. It exists because on a Mac whose
+  firewall blocks incoming connections, loopback is the only address a
+  host service is reachable at: the host's LAN address is refused by the
+  firewall, and `192.168.5.2` (the host as the guest sees it) only leads to
+  agentctl's own ports. Still refused: a loopback entry without ports (an
+  error at `create`), loopback addresses other than `127.0.0.1` and `::1`,
+  hostnames that resolve to loopback (`localhost` included), and the ports
+  agentctl pins for any sandbox's SSH forward and egress proxy. The guest
+  reaches the service through its egress proxy, and its `no_proxy` lists
+  `127.0.0.1` (which inside the guest means the guest itself), so tell the
+  client to use the proxy for it: `curl --noproxy '' http://127.0.0.1:8081/`,
+  or run the client with `NO_PROXY= no_proxy=` set. On Incus a loopback
+  entry is refused, because there `127.0.0.1` is the guest's own loopback:
+  bind the service to the host's address on the Incus bridge and allow
+  that address with its port instead.
 
 ## Allowing package sources and git hosts
 

@@ -50,7 +50,9 @@ import (
 //     port, which the guest reaches at 192.168.5.2 (Lima NATs that to the
 //     host's 127.0.0.1) and is pointed at via http_proxy/https_proxy. It
 //     enforces the same default-deny allowlist and deny-LAN semantics as
-//     the Incus ACL.
+//     the Incus ACL, plus one Lima-only exception: since it dials from the
+//     host, a 127.0.0.1:<port> allow entry reaches that host service (see
+//     egress.Policy), never on agentctl's own ports (checkLoopbackPorts).
 //  3. Before every start, agentctl re-asserts the instance configuration
 //     this depends on (no extra NICs, the pinned SSH port, the proxy
 //     environment) and checks Lima's effective configuration, so a
@@ -132,6 +134,71 @@ func toEgressPolicy(np provider.NetworkPolicy) egress.Policy {
 	return pol
 }
 
+// checkLoopbackPorts refuses a loopback allow rule (see egress.Policy) that
+// names a port agentctl has pinned for an instance's SSH forward or egress
+// proxy, this instance's or another's: the proxy dials from the host, so
+// such a rule would let the sandbox talk to its own cage, or another
+// sandbox's, directly. Ports not pinned yet are kept clear of the rule by
+// planStart instead.
+func checkLoopbackPorts(np provider.NetworkPolicy) error {
+	s, err := loadState()
+	if err != nil {
+		return err
+	}
+	owner := map[int]string{}
+	for name, st := range s.Instances {
+		owner[st.SSHLocalPort] = fmt.Sprintf("instance %q's SSH forward", name)
+		owner[st.EgressProxyPort] = fmt.Sprintf("instance %q's egress proxy", name)
+	}
+	delete(owner, 0)
+	for _, r := range np.Allow {
+		if !isLoopbackLiteral(r.Domain) {
+			continue
+		}
+		for _, port := range r.Ports {
+			if what, ok := owner[port]; ok {
+				return fmt.Errorf("allow entry %s: port %d belongs to the sandbox's own plumbing (%s), which a sandbox must never reach directly; run the service on another port",
+					net.JoinHostPort(strings.Trim(r.Domain, "[]"), strconv.Itoa(port)), port, what)
+			}
+		}
+	}
+	return nil
+}
+
+// loopbackAllowPorts returns the ports opened by loopback allow rules in
+// the recorded policy of name or any instance in s, which pickPorts must
+// not hand out.
+func loopbackAllowPorts(name string, s *stateFile) map[int]bool {
+	ports := map[int]bool{}
+	names := []string{name}
+	for other := range s.Instances {
+		names = append(names, other)
+	}
+	for _, n := range names {
+		paths, err := egressPathsFor(n)
+		if err != nil {
+			continue
+		}
+		pol, err := egress.LoadPolicy(paths.Policy)
+		if err != nil {
+			continue // a missing or unreadable policy denies everything
+		}
+		for _, r := range pol.Allow {
+			if isLoopbackLiteral(r.Domain) {
+				for _, port := range r.Ports {
+					ports[port] = true
+				}
+			}
+		}
+	}
+	return ports
+}
+
+func isLoopbackLiteral(domain string) bool {
+	ip := net.ParseIP(strings.Trim(domain, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
 // egressProxy controls an instance's proxy process. The real
 // implementation spawns agentctl's hidden egress-proxy command; tests
 // substitute a recorder.
@@ -191,7 +258,11 @@ func (p *Provider) planStart(name string, record bool) (*startPlan, error) {
 	// The instance's own proxy may still be up (e.g. after a plain
 	// `limactl stop`); Start restarts it, so its port counts as free.
 	ownProxyUp, _ := p.proxy.Running(paths)
-	sshPort, proxyPort, err := pickPorts(name, s, p.portFree, ownProxyUp)
+	// Never pin a port some instance's policy opens on loopback (see
+	// checkLoopbackPorts).
+	avoid := loopbackAllowPorts(name, s)
+	free := func(port int) bool { return !avoid[port] && p.portFree(port) }
+	sshPort, proxyPort, err := pickPorts(name, s, free, ownProxyUp)
 	if err != nil {
 		return nil, err
 	}
