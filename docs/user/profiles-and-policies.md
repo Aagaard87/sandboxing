@@ -117,10 +117,13 @@ example above).
   error at `create`), loopback addresses other than `127.0.0.1` and `::1`,
   hostnames that resolve to loopback (`localhost` included), and the ports
   agentctl pins for any sandbox's SSH forward and egress proxy. The guest
-  reaches the service through its egress proxy, and its `no_proxy` lists
-  `127.0.0.1` (which inside the guest means the guest itself), so tell the
-  client to use the proxy for it: `curl --noproxy '' http://127.0.0.1:8081/`,
-  or run the client with `NO_PROXY= no_proxy=` set. On Incus a loopback
+  reaches the service through its egress proxy: agentctl leaves the
+  literal out of the guest's `no_proxy`, so inside the guest a plain
+  `curl http://127.0.0.1:8081/`, or any client honouring the proxy
+  variables, gets there. The flip side: such clients now send every
+  `127.0.0.1` request to the proxy, which refuses ports you didn't list, so
+  reach the guest's own services as `localhost`, which stays in
+  `no_proxy`. On Incus a loopback
   entry is refused, because there `127.0.0.1` is the guest's own loopback:
   bind the service to the host's address on the Incus bridge and allow
   that address with its port instead.

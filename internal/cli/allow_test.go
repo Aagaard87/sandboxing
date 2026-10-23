@@ -255,10 +255,11 @@ func TestCLI_Create_LANLiteralErrors(t *testing.T) {
 	}
 }
 
-const loopbackNotice = "agentctl: allow entry 127.0.0.1:8081 is a loopback address; the sandbox can reach that one service on this machine, and nothing else on it.\n"
+const loopbackNotice = "agentctl: allow entry 127.0.0.1:8081 is a loopback address; the sandbox can reach that one service on this machine, and nothing else on it; the guest's no_proxy is adjusted so ordinary clients reach it.\n"
 
 // A loopback literal with a port reaches that one host service; create
-// says so once, under either deny-LAN setting, and only when it would.
+// says so once, including that the guest's no_proxy is adjusted for it,
+// under either deny-LAN setting, and only when it would.
 func TestCLI_Create_LoopbackLiteralNotice(t *testing.T) {
 	useIsolatedConfig(t)
 	for _, extra := range [][]string{nil, {"--allow-lan"}} {

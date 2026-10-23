@@ -1012,7 +1012,7 @@ func TestBuildConfinedStartArgs(t *testing.T) {
 }
 
 func TestBuildNetworkEditArgs(t *testing.T) {
-	got := buildNetworkEditArgs("demo", 50001, 50002)
+	got := buildNetworkEditArgs("demo", 50001, 50002, guestNoProxy(egress.Policy{}))
 	want := []string{"edit", "--tty=false", "--start=false",
 		"--set", ".networks = []",
 		"--set", ".ssh.localPort = 50001",
@@ -1271,5 +1271,73 @@ func TestLoopbackRule_PortIsNeverPinned(t *testing.T) {
 		if port == first || port == second {
 			t.Errorf("pinned port %d, which the instance's loopback rule opens", port)
 		}
+	}
+}
+
+// guestNoProxy leaves out of no_proxy exactly the loopback literals a rule
+// opens, keeps localhost always, and is today's value otherwise.
+func TestGuestNoProxy(t *testing.T) {
+	rule := func(domain string, ports ...int) egress.AllowRule {
+		return egress.AllowRule{Domain: domain, Ports: ports}
+	}
+	for _, c := range []struct {
+		name  string
+		allow []egress.AllowRule
+		want  string
+	}{
+		{"no loopback rule", []egress.AllowRule{rule("pypi.org", 443), rule("10.20.30.40", 8080)}, "localhost,127.0.0.1,::1"},
+		{"no rules at all", nil, "localhost,127.0.0.1,::1"},
+		{"127.0.0.1", []egress.AllowRule{rule("pypi.org", 443), rule("127.0.0.1", 8081)}, "localhost,::1"},
+		{"::1", []egress.AllowRule{rule("::1", 8081)}, "localhost,127.0.0.1"},
+		{"both", []egress.AllowRule{rule("127.0.0.1", 8081), rule("::1", 8081, 8082)}, "localhost"},
+		{"portless rule opens nothing", []egress.AllowRule{rule("127.0.0.1")}, "localhost,127.0.0.1,::1"},
+		{"localhost rule", []egress.AllowRule{rule("localhost", 8081)}, "localhost,127.0.0.1,::1"},
+	} {
+		if got := guestNoProxy(egress.Policy{DenyLAN: true, Allow: c.allow}); got != c.want {
+			t.Errorf("%s: guestNoProxy = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// End to end through a confined start: the recorded policy decides the
+// guest's no_proxy, both spellings agree, nothing else in the proxy
+// environment changes, and checkConfinable accepts the result.
+func TestConfinedStart_LoopbackRuleAdjustsNoProxy(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		allow []provider.AllowRule
+		want  string
+	}{
+		{"none", []provider.AllowRule{{Domain: "pypi.org", Ports: []int{443}}}, "localhost,127.0.0.1,::1"},
+		{"127.0.0.1", []provider.AllowRule{{Domain: "127.0.0.1", Ports: []int{8081}}}, "localhost,::1"},
+		{"both", []provider.AllowRule{{Domain: "127.0.0.1", Ports: []int{8081}}, {Domain: "[::1]", Ports: []int{8081}}}, "localhost"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fl := newFakeLima()
+			p, _ := newTestProvider(t, fl, true)
+			ctx := context.Background()
+			if _, err := p.Create(ctx, provider.InstanceSpec{Name: "demo", Image: "template://ubuntu-lts",
+				Overrides: provider.NetworkPolicy{DenyLAN: true, Allow: c.allow}}); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			preview := p.PreviewStart("demo")
+			if err := p.Start(ctx, "demo"); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			for _, k := range []string{".env.no_proxy", ".env.NO_PROXY"} {
+				if got := fl.edits[k]; got != c.want {
+					t.Errorf("%s = %q, want %q", k, got, c.want)
+				}
+			}
+			url := "http://192.168.5.2:" + strconv.Itoa(mustState(t, "demo").EgressProxyPort)
+			for _, k := range []string{".env.http_proxy", ".env.https_proxy", ".env.HTTP_PROXY", ".env.HTTPS_PROXY"} {
+				if got := fl.edits[k]; got != url {
+					t.Errorf("%s = %q, want %q", k, got, url)
+				}
+			}
+			if want := fmt.Sprintf(".env.no_proxy = %q", c.want); !strings.Contains(strings.Join(preview[0].Args, " "), want) {
+				t.Errorf("PreviewStart's edit %v doesn't contain %s", preview[0].Args, want)
+			}
+		})
 	}
 }

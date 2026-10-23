@@ -237,11 +237,13 @@ func proxyCommand(agentctl string, paths egressPaths, port int) provider.Command
 }
 
 // startPlan is what a confined start needs besides limactl calls: the
-// pinned ports and the proxy invocation. Start and PreviewStart compute it
-// the same way (the preview just doesn't record the ports), so the
-// preview shows the commands a start would actually run.
+// pinned ports, the guest's no_proxy, and the proxy invocation. Start and
+// PreviewStart compute it the same way (the preview just doesn't record
+// the ports), so the preview shows the commands a start would actually
+// run.
 type startPlan struct {
 	SSHPort, ProxyPort int
+	NoProxy            string // see guestNoProxy
 	Paths              egressPaths
 	Proxy              provider.Command
 }
@@ -278,7 +280,10 @@ func (p *Provider) planStart(name string, record bool) (*startPlan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("locating the agentctl binary to run the egress proxy: %w", err)
 	}
-	return &startPlan{SSHPort: sshPort, ProxyPort: proxyPort, Paths: paths, Proxy: proxyCommand(agentctl, paths, proxyPort)}, nil
+	// A missing or unreadable policy denies everything, so the guest keeps
+	// the usual no_proxy.
+	pol, _ := egress.LoadPolicy(paths.Policy)
+	return &startPlan{SSHPort: sshPort, ProxyPort: proxyPort, NoProxy: guestNoProxy(pol), Paths: paths, Proxy: proxyCommand(agentctl, paths, proxyPort)}, nil
 }
 
 // pickPorts returns name's SSH-forward and egress-proxy ports: the ones
@@ -363,12 +368,33 @@ func buildConfinedStartArgs(name string, sshPort, proxyPort int) []string {
 	return append([]string{"-p", sandboxProfile(sshPort, proxyPort), binary}, buildStartArgs(name)...)
 }
 
+// guestNoProxy is the no_proxy list the guest gets: its own loopback is
+// reached directly, except a loopback literal the policy opens with an
+// allow rule (see egress.Policy), which is left out so that clients
+// honouring the proxy variables send it to the proxy, and through it to
+// that service on the host. localhost always stays: a hostname resolving
+// to loopback is refused by the proxy, so sending it there would only
+// turn a direct connection into a 403.
+func guestNoProxy(pol egress.Policy) string {
+	entries := []string{"localhost"}
+	for _, lit := range []string{"127.0.0.1", "::1"} {
+		opened := false
+		for _, r := range pol.Allow {
+			opened = opened || (r.Domain == lit && len(r.Ports) > 0)
+		}
+		if !opened {
+			entries = append(entries, lit)
+		}
+	}
+	return strings.Join(entries, ",")
+}
+
 // guestProxyEnv is the proxy environment the guest gets (Lima writes the
-// instance's env: into /etc/environment at boot). Both spellings are set
-// explicitly since tools disagree on which one they read.
-func guestProxyEnv(proxyPort int) [][2]string {
+// instance's env: into /etc/environment at boot), with noProxy from
+// guestNoProxy. Both spellings are set explicitly since tools disagree on
+// which one they read.
+func guestProxyEnv(proxyPort int, noProxy string) [][2]string {
 	url := fmt.Sprintf("http://%s:%d", slirpGateway, proxyPort)
-	noProxy := "localhost,127.0.0.1,::1"
 	return [][2]string{
 		{"http_proxy", url}, {"https_proxy", url}, {"no_proxy", noProxy},
 		{"HTTP_PROXY", url}, {"HTTPS_PROXY", url}, {"NO_PROXY", noProxy},
@@ -385,19 +411,20 @@ func guestProxyEnv(proxyPort int) [][2]string {
 //   - .ssh.localPort pins the SSH forward to the port sandboxProfile
 //     allows.
 //   - the guest's proxy environment points at this instance's egress
-//     proxy, and propagateProxyEnv=false stops the host's own proxy
-//     settings from overriding it.
+//     proxy, with noProxy as its no_proxy (see guestNoProxy), and
+//     propagateProxyEnv=false stops the host's own proxy settings from
+//     overriding it.
 //
 // --tty=false and --start=false matter: an interactive edit could offer to
 // start the instance itself, outside the sandbox. Re-running this with
 // nothing to change is a no-op ("no changes made").
-func buildNetworkEditArgs(name string, sshPort, proxyPort int) []string {
+func buildNetworkEditArgs(name string, sshPort, proxyPort int, noProxy string) []string {
 	args := []string{"edit", "--tty=false", "--start=false",
 		"--set", ".networks = []",
 		"--set", fmt.Sprintf(".ssh.localPort = %d", sshPort),
 		"--set", ".propagateProxyEnv = false",
 	}
-	for _, kv := range guestProxyEnv(proxyPort) {
+	for _, kv := range guestProxyEnv(proxyPort, noProxy) {
 		args = append(args, "--set", fmt.Sprintf(".env.%s = %q", kv[0], kv[1]))
 	}
 	return append(args, name)
@@ -426,7 +453,7 @@ func checkConfinable(j limaInstanceJSON, plan *startPlan) error {
 	if j.Config.PropagateProxyEnv == nil || *j.Config.PropagateProxyEnv {
 		return fmt.Errorf("Lima instance %q has propagateProxyEnv enabled — probably by ~/.lima/_config/override.yaml; it would override the guest's egress proxy settings", name)
 	}
-	for _, kv := range guestProxyEnv(plan.ProxyPort) {
+	for _, kv := range guestProxyEnv(plan.ProxyPort, plan.NoProxy) {
 		if got := j.Config.Env[kv[0]]; got != kv[1] {
 			return fmt.Errorf("Lima instance %q has env %s=%q, not %q — probably overridden by ~/.lima/_config/override.yaml; the guest would not use its egress proxy", name, kv[0], got, kv[1])
 		}
@@ -589,7 +616,7 @@ func (p *Provider) startConfined(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if _, _, err := p.run(ctx, buildNetworkEditArgs(name, plan.SSHPort, plan.ProxyPort)...); err != nil {
+	if _, _, err := p.run(ctx, buildNetworkEditArgs(name, plan.SSHPort, plan.ProxyPort, plan.NoProxy)...); err != nil {
 		return fmt.Errorf("configuring %q for network confinement: %w", name, err)
 	}
 	if j, err = p.inspect(ctx, name); err != nil {

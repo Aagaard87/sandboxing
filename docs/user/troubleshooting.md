@@ -92,11 +92,17 @@ reply when the macOS firewall blocks incoming connections
 (`socketfilterfw --getglobalstate` reports "blocking all non-essential
 incoming connections"). Allow the service
 on loopback instead, `--allow=127.0.0.1:8081` (see
-[Egress allowlist](profiles-and-policies.md#egress-allowlist)), and reach
-it through the proxy from inside the guest: `curl --noproxy ''
-http://127.0.0.1:8081/`. A plain `curl http://127.0.0.1:8081/` goes to the
-guest's own loopback (`no_proxy` lists it) and is refused there. On Incus,
-loopback entries are refused; use the host's bridge address.
+[Egress allowlist](profiles-and-policies.md#egress-allowlist)); inside the
+guest, `curl http://127.0.0.1:8081/` then reaches it through the proxy,
+since agentctl leaves `127.0.0.1` out of the guest's `no_proxy`. If a
+client still gets "Connection refused" from `127.0.0.1`, it is bypassing
+the proxy: check it honours `http_proxy`, and that nothing in the guest
+puts `127.0.0.1` back into `no_proxy`. On Incus, loopback entries are
+refused; use the host's bridge address.
+
+The same change means a proxy-honouring client in the guest sends every
+`127.0.0.1` request to the proxy, so a service running *inside* the guest
+on another port gets a `403` there: reach it as `localhost` instead.
 
 ## Nothing in the sandbox can reach the network / `curl` fails during an agent install
 

@@ -208,7 +208,7 @@ func newCreateCmd() *cobra.Command {
 					fmt.Fprintf(w, "agentctl: allow entry %s is a LAN address; it is reachable on %s only, and deny-LAN stays on for the rest of the network.\n", e, which)
 				}
 				for _, e := range loopbackEntries {
-					fmt.Fprintf(w, "agentctl: allow entry %s is a loopback address; the sandbox can reach that one service on this machine, and nothing else on it.\n", e)
+					fmt.Fprintf(w, "agentctl: allow entry %s is a loopback address; the sandbox can reach that one service on this machine, and nothing else on it; the guest's no_proxy is adjusted so ordinary clients reach it.\n", e)
 				}
 			}
 
