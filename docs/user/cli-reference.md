@@ -92,7 +92,10 @@ Standard lifecycle transitions. Both support `--preview`/`--dry-run`, as does
 Show instances. `status` shows one instance's detail (IPs, image, profiles,
 created time, and — on Lima under macOS, for a running instance agentctl
 started confined — the result of the start-time network confinement check:
-`verified` or `unverified`; also `confinement` under `--output json`).
+`verified` or `unverified`; also `confinement` under `--output json`), and
+the host directories exposed to it, one `Mounts:` row each in the same
+`<host> -> <guest> (writable|read-only)` form `start` prints (`mounts`
+under `--output json`; no row when there are none).
 
 ## Interactive access
 
