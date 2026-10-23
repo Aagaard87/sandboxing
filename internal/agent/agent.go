@@ -167,6 +167,12 @@ func presetRules(name string) []profile.AllowRule {
 	return p.Allow
 }
 
+// profile checks a profile's agents list against this registry, which it
+// cannot import; see profile.KnownAgents.
+func init() {
+	profile.KnownAgents = Names
+}
+
 // Lookup returns the Spec for name and whether it was found.
 func Lookup(name string) (Spec, bool) {
 	s, ok := Registry[name]
