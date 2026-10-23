@@ -85,7 +85,9 @@ verified`); `create --agent` prints the same line when it starts the instance. S
 ### `agentctl stop <name> [--force] [--timeout <secs>]` / `agentctl delete <name> [--force]`
 
 Standard lifecycle transitions. Both support `--preview`/`--dry-run`, as does
-`start`.
+`start`. `stop` on an instance that is already stopped prints `agentctl:
+<name> is already stopped` and succeeds; `stop --force` always goes to the
+backend.
 
 ### `agentctl list` (alias `ls`) / `agentctl status <name>`
 
