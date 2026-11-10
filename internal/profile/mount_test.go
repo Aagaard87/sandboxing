@@ -3,6 +3,7 @@ package profile
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -213,12 +214,36 @@ func TestResolveMounts_GuestPathDefaultsToHostPath(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	got, err := ResolveMounts([]Mount{{HostPath: src}}, "demo", MountPolicy{})
+	if runtime.GOOS == "windows" {
+		// No default on Windows; see TestResolveGuestPath_WindowsHostPath.
+		if err == nil {
+			t.Fatalf("ResolveMounts defaulted the guest path to %q, want an error asking for one", got[0].GuestPath)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatalf("ResolveMounts: %v", err)
 	}
 	want, _ := filepath.EvalSymlinks(src)
 	if got[0].GuestPath != filepath.ToSlash(want) {
 		t.Errorf("GuestPath = %q, want it defaulted to the host path %q", got[0].GuestPath, want)
+	}
+}
+
+// A Windows host path has no guest-side form, so with no guest path given
+// the refusal has to ask for one, not complain that a path the user never
+// typed isn't absolute.
+func TestResolveGuestPath_WindowsHostPath(t *testing.T) {
+	_, err := resolveGuestPath("", `C:\Users\me\src`)
+	if err == nil {
+		t.Fatal("resolveGuestPath defaulted a Windows host path into a guest path, want an error")
+	}
+	if !strings.Contains(err.Error(), `--mount C:\Users\me\src:/workspace`) {
+		t.Errorf("error = %v, want it to show how to give a guest path", err)
+	}
+
+	if got, err := resolveGuestPath("/workspace", `C:\Users\me\src`); err != nil || got != "/workspace" {
+		t.Errorf("resolveGuestPath with an explicit guest path = %q, %v; want /workspace", got, err)
 	}
 }
 

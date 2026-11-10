@@ -284,6 +284,12 @@ func resolveGuestPath(raw, canonicalHost string) (string, error) {
 	guestPath := strings.TrimSpace(raw)
 	if guestPath == "" {
 		guestPath = filepath.ToSlash(canonicalHost)
+		// A Windows host path (C:\Users\me\src) has no form that means the
+		// same thing inside a Linux guest, so it can't double as the guest
+		// path the way a macOS or Linux one does.
+		if !path.IsAbs(guestPath) {
+			return "", fmt.Errorf("host path %s can't double as the guest path; give one explicitly (guestPath in a profile, or --mount %s:/workspace)", canonicalHost, canonicalHost)
+		}
 	}
 	if !path.IsAbs(guestPath) {
 		return "", fmt.Errorf("guestPath %q must be absolute", guestPath)
