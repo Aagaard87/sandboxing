@@ -10,11 +10,13 @@ import (
 
 // withHome points os.UserHomeDir at a temporary directory so the
 // home-relative rules (the $HOME denial, alwaysDenied, "~" expansion) can
-// be exercised without touching the developer's real home.
+// be exercised without touching the developer's real home. Windows reads
+// USERPROFILE instead of HOME, so both are set.
 func withHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	return home
 }
 
