@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -50,6 +51,9 @@ func TestServe_RefusesNonLoopback(t *testing.T) {
 }
 
 func TestServe_LocksPIDFileForItsLifetime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("not covered on Windows: a running proxy holding its PID-file lock for its lifetime and refusing a second one. The proxy's process handling is a stub there (process_windows.go): only the macOS Lima backend runs the proxy")
+	}
 	dir := t.TempDir()
 	opts := ServeOptions{
 		Listen:     freeLoopbackAddr(t),
