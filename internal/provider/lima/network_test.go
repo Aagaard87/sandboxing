@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -461,13 +462,15 @@ func TestConfinedStart_RefusesWritableMountOverAgentctlState(t *testing.T) {
 // through.
 func TestConfinedStart_RefusesMountsLimaMergesIn(t *testing.T) {
 	rw, ro := true, false
-	home := "/Users/you"
+	// The home directory in the host's own form; its mount point is a
+	// guest path.
+	home, guestHome := filepath.FromSlash("/Users/you"), "/Users/you"
 	cases := map[string]struct {
 		configMounts []limaMountJSON
 		refused      bool
 	}{
 		"only the instance's own mounts":       {nil, false},
-		"default.yaml adds the home directory": {[]limaMountJSON{{Location: home, MountPoint: &home, Writable: &ro}}, true},
+		"default.yaml adds the home directory": {[]limaMountJSON{{Location: home, MountPoint: &guestHome, Writable: &ro}}, true},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -483,7 +486,7 @@ func TestConfinedStart_RefusesMountsLimaMergesIn(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "would mount "+home+" at "+home+" (read-only)") {
+			if err == nil || !strings.Contains(err.Error(), "would mount "+home+" at "+guestHome+" (read-only)") {
 				t.Fatalf("Start error = %v, want a refusal over the merged-in home directory", err)
 			}
 			if len(fl.callsTo(sandboxExecBinary)) != 0 || len(fp.starts) != 0 {
@@ -1051,6 +1054,9 @@ func TestParseEgressProbe(t *testing.T) {
 // correctly — most importantly that a refused or timed-out connection is
 // "blocked" and anything that got through is "open".
 func TestEgressProbeScript(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("not covered on Windows: how the egress probe reads curl's, bash's and python3's results. The probe runs only inside the Linux guest, and Git Bash on a Windows host puts its real curl ahead of this test's fakes, so the probe would reach 1.1.1.1 for real")
+	}
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("no sh on this host")

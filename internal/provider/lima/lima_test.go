@@ -204,9 +204,10 @@ func assertNotStarted(t *testing.T, fr *fakeRunner) {
 }
 
 func TestStart_AllowsTheInstancesOwnMounts(t *testing.T) {
+	alpha := filepath.FromSlash("/src/alpha")
 	fr := limaInstanceWithMounts(t,
-		"- location: /src/alpha\n  mountPoint: /workspace\n  writable: true\n",
-		`{"location":"/src/alpha","mountPoint":"/workspace","writable":true}`)
+		"- location: "+alpha+"\n  mountPoint: /workspace\n  writable: true\n",
+		`{"location":`+strconv.Quote(alpha)+`,"mountPoint":"/workspace","writable":true}`)
 	p, _ := newTestProvider(t, fr, false)
 
 	if err := p.Start(context.Background(), "demo"); err != nil {
@@ -219,14 +220,15 @@ func TestStart_AllowsTheInstancesOwnMounts(t *testing.T) {
 // sandbox seeing host directories nobody named to agentctl: here, the
 // home directory a ~/.lima/_config/default.yaml adds to every instance.
 func TestStart_RefusesMountsLimaMergesIn(t *testing.T) {
+	alpha, you := filepath.FromSlash("/src/alpha"), filepath.FromSlash("/Users/you")
 	fr := limaInstanceWithMounts(t,
-		"- location: /src/alpha\n  mountPoint: /workspace\n  writable: true\n",
-		`{"location":"/src/alpha","mountPoint":"/workspace","writable":true},`+
-			`{"location":"/Users/you","mountPoint":"/Users/you","writable":false}`)
+		"- location: "+alpha+"\n  mountPoint: /workspace\n  writable: true\n",
+		`{"location":`+strconv.Quote(alpha)+`,"mountPoint":"/workspace","writable":true},`+
+			`{"location":`+strconv.Quote(you)+`,"mountPoint":"/Users/you","writable":false}`)
 	p, _ := newTestProvider(t, fr, false)
 
 	err := p.Start(context.Background(), "demo")
-	if err == nil || !strings.Contains(err.Error(), "would mount /Users/you at /Users/you (read-only)") {
+	if err == nil || !strings.Contains(err.Error(), "would mount "+you+" at /Users/you (read-only)") {
 		t.Fatalf("Start() = %v, want it refused for mounting the home directory", err)
 	}
 	assertNotStarted(t, fr)

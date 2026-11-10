@@ -5,6 +5,7 @@ import (
 	"context"
 	"net"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,9 @@ func TestEgressProxyCmd_HiddenFromHelp(t *testing.T) {
 // as the Lima backend spawns it (same argument builder) and checks it
 // comes up holding its pid file and exits cleanly when told to stop.
 func TestEgressProxyCmd_ServesUntilCanceled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("not covered on Windows: the egress-proxy command coming up holding its PID file and exiting cleanly when stopped. The proxy's process handling is a stub there (internal/egress/process_windows.go): only the macOS Lima backend runs the proxy")
+	}
 	useIsolatedConfig(t)
 	dir := t.TempDir()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

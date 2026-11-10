@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -193,7 +194,11 @@ func TestWritePolicy_LoadPolicy_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if perm := fi.Mode().Perm(); perm != 0o600 {
+	// Windows has no Unix permission bits; a file's access there comes
+	// from the ACL it inherits, which agentctl doesn't set.
+	if runtime.GOOS == "windows" {
+		t.Log("not covered on Windows: that the policy file is private (mode 0600)")
+	} else if perm := fi.Mode().Perm(); perm != 0o600 {
 		t.Errorf("policy file mode = %o, want 0600", perm)
 	}
 	got, err := LoadPolicy(path)

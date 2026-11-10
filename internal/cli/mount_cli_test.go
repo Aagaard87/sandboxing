@@ -13,12 +13,28 @@ import (
 
 // useIsolatedHome points $HOME at a temporary directory so mount
 // resolution — which touches the real filesystem — never reads or creates
-// anything under the developer's own home.
+// anything under the developer's own home. Windows reads USERPROFILE
+// instead of HOME, so both are set.
 func useIsolatedHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	return home
+}
+
+// resolved returns path with its symlinks, and on Windows its 8.3 short
+// names, resolved: the form mount resolution reports a host path in, so
+// the form to compare against. A temporary directory is reached through
+// a symlink on macOS (/var -> /private/var) and through a short name on
+// Windows (C:\Users\RUNNER~1).
+func resolved(t *testing.T, path string) string {
+	t.Helper()
+	r, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("EvalSymlinks %s: %v", path, err)
+	}
+	return r
 }
 
 func mustMkdir(t *testing.T, path string) string {
@@ -39,7 +55,7 @@ func TestCLI_CreateWithMount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v (%s)", err, out)
 	}
-	if !strings.Contains(out, src+" -> /workspace (writable)") {
+	if !strings.Contains(out, resolved(t, src)+" -> /workspace (writable)") {
 		t.Errorf("create output %q should report the mount it applied", out)
 	}
 
@@ -77,7 +93,7 @@ func TestCLI_CreateDefaultsToWorkspaceMountOnly(t *testing.T) {
 	if !strings.Contains(inst.Mounts[0].HostPath, "demo") || strings.Contains(inst.Mounts[0].HostPath, "{{") {
 		t.Errorf("host path = %q, want the instance name substituted in", inst.Mounts[0].HostPath)
 	}
-	if !strings.HasPrefix(inst.Mounts[0].HostPath, home) {
+	if !strings.HasPrefix(inst.Mounts[0].HostPath, resolved(t, home)) {
 		t.Errorf("host path = %q, want it under the (temporary) home %q", inst.Mounts[0].HostPath, home)
 	}
 }
@@ -155,7 +171,7 @@ func TestCLI_StartWithoutMountFlagsKeepsExistingMounts(t *testing.T) {
 	assertSingleMount(t, p, alpha)
 	// Sticky mounts are only safe if they're visible, so a bare start
 	// still prints what the sandbox can see.
-	if !strings.Contains(out, alpha) {
+	if !strings.Contains(out, resolved(t, alpha)) {
 		t.Errorf("bare start output %q should still report the active mount set", out)
 	}
 }
@@ -228,8 +244,8 @@ func assertSingleMount(t *testing.T, p *fake.Provider, wantHostPath string) {
 	if len(inst.Mounts) != 1 {
 		t.Fatalf("instance mounts = %+v, want exactly one", inst.Mounts)
 	}
-	if inst.Mounts[0].HostPath != wantHostPath {
-		t.Errorf("mounted %q, want %q", inst.Mounts[0].HostPath, wantHostPath)
+	if want := resolved(t, wantHostPath); inst.Mounts[0].HostPath != want {
+		t.Errorf("mounted %q, want %q", inst.Mounts[0].HostPath, want)
 	}
 }
 

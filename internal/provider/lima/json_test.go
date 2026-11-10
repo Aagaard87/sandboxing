@@ -1,6 +1,7 @@
 package lima
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -47,9 +48,12 @@ func TestParseLimaList_EffectiveMounts(t *testing.T) {
 	}
 	m := got[0].Config.Mounts[0]
 	location, mountPoint, writable := resolveMount(m)
-	if m.MountPoint == nil || m.Writable == nil || location != "/home/u" || mountPoint != "/home/u" || writable {
-		t.Errorf("mount = %q at %q (writable %t, mountPoint/writable present: %t/%t), want /home/u read-only at /home/u",
-			location, mountPoint, writable, m.MountPoint != nil, m.Writable != nil)
+	// resolveMount gives the host directory in the host's own form; this
+	// line comes from a Linux host. The mount point is a guest path.
+	wantLocation := filepath.FromSlash("/home/u")
+	if m.MountPoint == nil || m.Writable == nil || location != wantLocation || mountPoint != "/home/u" || writable {
+		t.Errorf("mount = %q at %q (writable %t, mountPoint/writable present: %t/%t), want %s read-only at /home/u",
+			location, mountPoint, writable, m.MountPoint != nil, m.Writable != nil, wantLocation)
 	}
 }
 
