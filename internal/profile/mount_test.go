@@ -354,6 +354,20 @@ func TestResolveMounts_RejectsFilesystemRoot(t *testing.T) {
 	}
 }
 
+// On Windows "/" above is only the current drive's root; every other
+// drive's root has to be refused too.
+func TestResolveMounts_RejectsDriveRoot(t *testing.T) {
+	withHome(t)
+	volume := filepath.VolumeName(t.TempDir())
+	if volume == "" {
+		t.Skip("drive roots exist only on Windows; / is covered above")
+	}
+	root := volume + `\`
+	if _, err := ResolveMounts([]Mount{{HostPath: root, GuestPath: "/host"}}, "demo", MountPolicy{}); err == nil {
+		t.Errorf("ResolveMounts accepted the drive root %s as a host path, want an error", root)
+	}
+}
+
 func TestResolveMounts_RejectsNonDirectory(t *testing.T) {
 	home := withHome(t)
 	file := filepath.Join(home, "file.txt")
