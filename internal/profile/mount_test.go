@@ -68,7 +68,11 @@ func TestResolveMounts_CreateMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat created directory: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o700 {
+	// Windows has no Unix permission bits; a directory's access there
+	// comes from the ACL it inherits, which agentctl doesn't set.
+	if runtime.GOOS == "windows" {
+		t.Log("not covered on Windows: that the created directory is private (mode 700)")
+	} else if perm := info.Mode().Perm(); perm != 0o700 {
 		t.Errorf("created directory mode = %o, want 700", perm)
 	}
 }
