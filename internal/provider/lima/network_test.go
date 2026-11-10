@@ -462,13 +462,15 @@ func TestConfinedStart_RefusesWritableMountOverAgentctlState(t *testing.T) {
 // through.
 func TestConfinedStart_RefusesMountsLimaMergesIn(t *testing.T) {
 	rw, ro := true, false
-	home := "/Users/you"
+	// The home directory in the host's own form; its mount point is a
+	// guest path.
+	home, guestHome := filepath.FromSlash("/Users/you"), "/Users/you"
 	cases := map[string]struct {
 		configMounts []limaMountJSON
 		refused      bool
 	}{
 		"only the instance's own mounts":       {nil, false},
-		"default.yaml adds the home directory": {[]limaMountJSON{{Location: home, MountPoint: &home, Writable: &ro}}, true},
+		"default.yaml adds the home directory": {[]limaMountJSON{{Location: home, MountPoint: &guestHome, Writable: &ro}}, true},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -484,7 +486,7 @@ func TestConfinedStart_RefusesMountsLimaMergesIn(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), "would mount "+home+" at "+home+" (read-only)") {
+			if err == nil || !strings.Contains(err.Error(), "would mount "+home+" at "+guestHome+" (read-only)") {
 				t.Fatalf("Start error = %v, want a refusal over the merged-in home directory", err)
 			}
 			if len(fl.callsTo(sandboxExecBinary)) != 0 || len(fp.starts) != 0 {

@@ -8,10 +8,13 @@ import (
 )
 
 // testHome points the home directory at a temp dir and returns it, so
-// "~" expansion is deterministic.
+// "~" expansion is deterministic. Windows reads USERPROFILE instead of
+// HOME, so both are set.
 func testHome(t *testing.T) string {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("UserHomeDir: %v", err)
@@ -39,8 +42,11 @@ func effective(location, mountPoint string, writable bool) limaMountJSON {
 
 func TestCheckMounts(t *testing.T) {
 	home := testHome(t)
-	const alpha = "- location: /src/alpha\n  mountPoint: /workspace\n  writable: true\n"
-	const data = "- location: /data\n  mountPoint: /data\n  writable: false\n"
+	// Host directories in the host's own form, the way Lima reports them;
+	// mount points are guest paths, so always POSIX.
+	alphaDir, dataDir := filepath.FromSlash("/src/alpha"), filepath.FromSlash("/data")
+	alpha := "- location: " + alphaDir + "\n  mountPoint: /workspace\n  writable: true\n"
+	data := "- location: " + dataDir + "\n  mountPoint: /data\n  writable: false\n"
 
 	cases := []struct {
 		name      string
@@ -54,15 +60,15 @@ func TestCheckMounts(t *testing.T) {
 			// The way Lima writes it: comments, and keys besides mounts.
 			own: "# managed by agentctl\ncpus: 2\nmounts:\n" + alpha + data + "user:\n  name: agent\n",
 			effective: []limaMountJSON{
-				effective("/src/alpha", "/workspace", true),
-				effective("/data", "/data", false),
+				effective(alphaDir, "/workspace", true),
+				effective(dataDir, "/data", false),
 			},
 		},
 		{name: "an own mount Lima doesn't report", own: "mounts:\n" + alpha},
 		{
 			name:      "default.yaml adds the home directory",
 			own:       "mounts:\n" + alpha,
-			effective: []limaMountJSON{effective("/src/alpha", "/workspace", true), effective(home, home, false)},
+			effective: []limaMountJSON{effective(alphaDir, "/workspace", true), effective(home, home, false)},
 			wantErr:   "would mount " + home + " at " + home + " (read-only)",
 		},
 		{
@@ -74,18 +80,18 @@ func TestCheckMounts(t *testing.T) {
 		{
 			name:      "override.yaml makes a read-only mount writable",
 			own:       "mounts:\n" + data,
-			effective: []limaMountJSON{effective("/data", "/data", true)},
-			wantErr:   "would mount /data at /data (writable)",
+			effective: []limaMountJSON{effective(dataDir, "/data", true)},
+			wantErr:   "would mount " + dataDir + " at /data (writable)",
 		},
 		{
 			name:      "override.yaml makes a writable mount read-only",
 			own:       "mounts:\n" + alpha,
-			effective: []limaMountJSON{effective("/src/alpha", "/workspace", false)},
+			effective: []limaMountJSON{effective(alphaDir, "/workspace", false)},
 		},
 		{
 			name:      "an own directory at another mount point",
 			own:       "mounts:\n" + data,
-			effective: []limaMountJSON{effective("/data", "/elsewhere", false)},
+			effective: []limaMountJSON{effective(dataDir, "/elsewhere", false)},
 			wantErr:   "at /elsewhere",
 		},
 		{
@@ -98,8 +104,8 @@ func TestCheckMounts(t *testing.T) {
 		},
 		{
 			name:      "Lima's defaults for a mount that leaves out mountPoint and writable",
-			own:       "mounts:\n- location: /data\n",
-			effective: []limaMountJSON{{Location: "/data"}},
+			own:       "mounts:\n- location: " + dataDir + "\n",
+			effective: []limaMountJSON{{Location: dataDir}},
 		},
 		{
 			name:      "a path template agentctl doesn't expand fails closed",
@@ -122,6 +128,20 @@ func TestCheckMounts(t *testing.T) {
 				t.Errorf("checkMounts() = %v, want an error containing %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// A lima.yaml's "~/data" is home-relative on every host, however its
+// separator is written. Clean turns it into "~\data" on Windows, which
+// used to slip past the "~/" check there and fail the comparison.
+func TestResolveMount_ExpandsHomeRelativeLocation(t *testing.T) {
+	home := testHome(t)
+	want := filepath.Join(home, "data")
+	for _, loc := range []string{"~/data", "~" + string(filepath.Separator) + "data"} {
+		location, mountPoint, _ := resolveMount(limaMountJSON{Location: loc})
+		if location != want || mountPoint != want {
+			t.Errorf("resolveMount(%q) = %q at %q, want %q at %q", loc, location, mountPoint, want, want)
+		}
 	}
 }
 

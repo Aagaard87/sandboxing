@@ -109,7 +109,9 @@ func instanceMounts(dir string) ([]limaMountJSON, error) {
 // fails the comparison, which refuses the start rather than allowing it.
 func resolveMount(m limaMountJSON) (location, mountPoint string, writable bool) {
 	location = filepath.Clean(m.Location)
-	if location == "~" || strings.HasPrefix(location, "~/") {
+	// Clean has already given the path the host's separator, so on
+	// Windows "~/src" is "~\src" by now.
+	if location == "~" || strings.HasPrefix(location, "~"+string(filepath.Separator)) {
 		if home, err := os.UserHomeDir(); err == nil {
 			location = filepath.Join(home, location[1:])
 		}
