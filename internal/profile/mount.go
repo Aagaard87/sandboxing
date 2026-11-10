@@ -203,7 +203,9 @@ var alwaysDenied = []string{
 }
 
 func checkDenied(canonical, home string, homeErr error, policy MountPolicy) error {
-	if canonical == string(filepath.Separator) && !policy.HomeAllowed() {
+	// A root is its own parent: "/", and on Windows every drive root
+	// (C:\, D:\) and share root (\\server\share\).
+	if filepath.Dir(canonical) == canonical && !policy.HomeAllowed() {
 		return errors.New("refusing to mount the filesystem root (set mountPolicy.allowHome to override)")
 	}
 	if homeErr == nil {
