@@ -20,6 +20,7 @@ type toolsEnv struct {
 
 func newToolsEnv(t *testing.T) *toolsEnv {
 	t.Helper()
+	skipGuestScriptsOnWindows(t, "the ripgrep and fd bootstrap's package-manager choice, install commands, fdfind link and failure handling")
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("no sh on PATH")

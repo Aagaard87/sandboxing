@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -60,9 +61,23 @@ func TestRegistry_InstallersUseFetchRun(t *testing.T) {
 	}
 }
 
+// skipGuestScriptsOnWindows skips a test that runs a guest script under
+// the host's own shell. The scripts only ever run under the Linux guest's
+// /bin/sh. On a Windows host the only sh is Git Bash, which puts its own
+// /usr/bin ahead of the fakes these tests put on PATH, so the real curl
+// downloads and runs real installers, and which cuts a long -c script off
+// at about 8 KB: what it reports says nothing about the guest.
+func skipGuestScriptsOnWindows(t *testing.T, notCovered string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skipf("not covered on Windows: %s. These scripts run only under the Linux guest's /bin/sh, and Git Bash on a Windows host would run real tools in place of this test's fakes", notCovered)
+	}
+}
+
 // Install scripts run under the guest's /bin/sh, which on Alpine and
 // Debian is not bash; dash is checked as well when present.
 func TestRegistry_InstallScriptsAreValidPOSIXShell(t *testing.T) {
+	skipGuestScriptsOnWindows(t, "every agent's install script parsing under sh and dash")
 	for _, shell := range []string{"sh", "dash"} {
 		path, err := exec.LookPath(shell)
 		if err != nil {
@@ -72,6 +87,18 @@ func TestRegistry_InstallScriptsAreValidPOSIXShell(t *testing.T) {
 			if out, err := exec.Command(path, "-n", "-c", spec.InstallScript).CombinedOutput(); err != nil {
 				t.Errorf("%s -n rejected %s's install script: %v\n%s", shell, name, err, out)
 			}
+		}
+	}
+}
+
+// A carriage return ends every command with a stray character under the
+// guest's /bin/sh, whichever host agentctl was built on. This needs no
+// shell, so it also runs on Windows, where a checkout is likeliest to add
+// one and the tests above that run the scripts are skipped.
+func TestRegistry_InstallScriptsHaveNoCarriageReturns(t *testing.T) {
+	for name, spec := range Registry {
+		if strings.Contains(spec.InstallScript, "\r") {
+			t.Errorf("%s's install script contains a carriage return; .gitattributes should keep *.sh LF on every checkout", name)
 		}
 	}
 }
@@ -141,6 +168,7 @@ func runFetchRun(t *testing.T, shell, mode, scriptStatus, body string) fetchRunR
 
 func shells(t *testing.T) []string {
 	t.Helper()
+	skipGuestScriptsOnWindows(t, "agentctl_fetch_run's handling of a refused download and of the installer's exit status")
 	var found []string
 	for _, s := range []string{"sh", "dash"} {
 		if p, err := exec.LookPath(s); err == nil {

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -1051,6 +1052,9 @@ func TestParseEgressProbe(t *testing.T) {
 // correctly — most importantly that a refused or timed-out connection is
 // "blocked" and anything that got through is "open".
 func TestEgressProbeScript(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("not covered on Windows: how the egress probe reads curl's, bash's and python3's results. The probe runs only inside the Linux guest, and Git Bash on a Windows host puts its real curl ahead of this test's fakes, so the probe would reach 1.1.1.1 for real")
+	}
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("no sh on this host")

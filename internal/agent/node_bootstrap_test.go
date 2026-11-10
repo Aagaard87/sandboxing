@@ -12,6 +12,7 @@ import (
 // and Debian is not bash, so a syntax error here would surface as a
 // failed `create --agent=pi` on someone else's machine.
 func TestPiInstallScript_IsValidPOSIXShell(t *testing.T) {
+	skipGuestScriptsOnWindows(t, "pi's install script parsing under sh")
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("no sh on PATH; cannot syntax-check the install script")
@@ -44,6 +45,7 @@ func TestPiInstallScript_RunsPiInstallerAfterNode(t *testing.T) {
 // so it needs nothing else on PATH.
 func runBootstrap(t *testing.T, nodeVersion, body string) (string, error) {
 	t.Helper()
+	skipGuestScriptsOnWindows(t, "the Node.js bootstrap's version comparison and install decision")
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("no sh on PATH")
@@ -125,6 +127,7 @@ func TestNodeBootstrap_Decision(t *testing.T) {
 // the host's PATH (the ~/.profile guard needs grep), then prints PATH.
 func runPathStep(t *testing.T, home string) string {
 	t.Helper()
+	skipGuestScriptsOnWindows(t, "putting an installed agent's bin directory on PATH and into ~/.profile")
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("no sh on PATH")
