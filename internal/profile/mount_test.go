@@ -171,6 +171,43 @@ func TestResolveMounts_HomeDirectory(t *testing.T) {
 	}
 }
 
+// On Windows, gcloud, GnuPG and Windows Credential Manager keep their
+// secrets under %APPDATA% and %LOCALAPPDATA%, not in the dot-folders
+// alwaysDenied lists, and folder redirection can put those anywhere.
+func TestResolveMounts_WindowsCredentialStoresDenied(t *testing.T) {
+	withHome(t)
+	saved := hostOS
+	hostOS = "windows"
+	t.Cleanup(func() { hostOS = saved })
+	roaming := filepath.Join(t.TempDir(), "Roaming")
+	local := filepath.Join(t.TempDir(), "Local")
+	t.Setenv("APPDATA", roaming)
+	t.Setenv("LOCALAPPDATA", local)
+
+	for _, dir := range []string{
+		filepath.Join(roaming, "gcloud"),
+		filepath.Join(roaming, "gnupg", "private-keys-v1.d"),
+		filepath.Join(roaming, "Microsoft", "Credentials"),
+		filepath.Join(roaming, "Microsoft", "Protect"),
+		filepath.Join(local, "Microsoft", "Credentials"),
+	} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if _, err := ResolveMounts([]Mount{{HostPath: dir, GuestPath: "/mnt"}}, "demo", MountPolicy{AllowHome: allow(true)}); err == nil {
+			t.Errorf("ResolveMounts mounted %s, want it always denied", dir)
+		}
+	}
+
+	other := filepath.Join(roaming, "Code")
+	if err := os.MkdirAll(other, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if _, err := ResolveMounts([]Mount{{HostPath: other, GuestPath: "/mnt"}}, "demo", MountPolicy{}); err != nil {
+		t.Errorf("ResolveMounts rejected %s, which holds no credentials: %v", other, err)
+	}
+}
+
 // alwaysDenied exists so a profile author cannot forget these. The
 // provider-state entries matter most: write access to ~/.lima or Incus's
 // own state lets an agent rewrite the next sandbox's configuration.

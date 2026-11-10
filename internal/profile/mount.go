@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"text/template"
@@ -119,6 +120,9 @@ func resolveOne(m Mount, instanceName, home string, homeErr error, policy MountP
 	}
 
 	if err := checkDenied(canonical, home, homeErr, policy); err != nil {
+		return provider.Mount{}, err
+	}
+	if err := checkWindowsDenied(canonical, home, homeErr); err != nil {
 		return provider.Mount{}, err
 	}
 	if err := checkAllowedRoots(canonical, instanceName, home, homeErr, policy); err != nil {
@@ -340,4 +344,53 @@ func withinPosix(p, root string) bool {
 		return true
 	}
 	return strings.HasPrefix(p, strings.TrimSuffix(root, "/")+"/")
+}
+
+// hostOS is runtime.GOOS, as a variable so tests can exercise
+// checkWindowsDenied on any host.
+var hostOS = runtime.GOOS
+
+// checkWindowsDenied refuses the credential stores a Windows host keeps
+// outside the dot-folders alwaysDenied lists: gcloud's and Gpg4win's under
+// %APPDATA% (~/.config/gcloud and ~/.gnupg elsewhere), and the saved
+// credentials Windows Credential Manager keeps, with the DPAPI master keys
+// that decrypt them, under AppData\...\Microsoft. %APPDATA% and
+// %LOCALAPPDATA% come from the environment rather than from the home
+// directory because folder redirection can move them off it altogether.
+func checkWindowsDenied(canonical, home string, homeErr error) error {
+	if hostOS != "windows" {
+		return nil
+	}
+	roaming, local := os.Getenv("APPDATA"), os.Getenv("LOCALAPPDATA")
+	if homeErr == nil {
+		if roaming == "" {
+			roaming = filepath.Join(home, "AppData", "Roaming")
+		}
+		if local == "" {
+			local = filepath.Join(home, "AppData", "Local")
+		}
+	}
+	var denied []string
+	if roaming != "" {
+		denied = append(denied,
+			filepath.Join(roaming, "gcloud"),
+			filepath.Join(roaming, "gnupg"),
+			filepath.Join(roaming, "Microsoft", "Credentials"),
+			filepath.Join(roaming, "Microsoft", "Protect"),
+		)
+	}
+	if local != "" {
+		denied = append(denied, filepath.Join(local, "Microsoft", "Credentials"))
+	}
+	for _, dir := range denied {
+		// The mount is canonical, so these have to be too: an 8.3 short
+		// name or a junction in %APPDATA% would otherwise never match.
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
+		if within(canonical, dir) {
+			return fmt.Errorf("%s is never mountable (credentials live there)", canonical)
+		}
+	}
+	return nil
 }
